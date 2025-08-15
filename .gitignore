@@ -1,0 +1,5 @@
+data/
+data_embeddings/
+dataset_embeddings/
+
+.env
