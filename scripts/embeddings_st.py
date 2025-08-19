@@ -2,6 +2,8 @@ import os
 import glob
 import sys
 
+import dotenv
+dotenv.load_dotenv()
 from sentence_transformers import SentenceTransformer
 import pandas as pd
 

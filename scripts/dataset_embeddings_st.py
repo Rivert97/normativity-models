@@ -2,9 +2,11 @@
 import os
 import sys
 
+import dotenv
+dotenv.load_dotenv()
+import pandas as pd
 from datasets import load_dataset
 from sentence_transformers import SentenceTransformer
-import pandas as pd
 
 # Global variables
 DATASET_NAME = 'Rivert97/ug-normativity'
