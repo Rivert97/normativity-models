@@ -41,7 +41,7 @@ def main():
         batch_size = 32
 
     # Loading embeddings model
-    model = SentenceTransformer(model_id, model_kwargs={'device_map': 'sequential'})
+    model = SentenceTransformer(model_id, model_kwargs={'device_map': 'auto'})
     print("Model Device:", model.device)
 
     # Loading the questions

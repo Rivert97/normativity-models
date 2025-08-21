@@ -38,7 +38,7 @@ def main():
     else:
         batch_size = 32
 
-    model = SentenceTransformer(model_id, model_kwargs={'device_map': 'sequential'})
+    model = SentenceTransformer(model_id, model_kwargs={'device_map': 'auto'})
     print("Model Device:", model.device)
 
     destination_dir = os.path.join(EMBEDDINGS_DIR, model_id)
