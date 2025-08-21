@@ -14,9 +14,9 @@ EMBEDDINGS_DIR = './dataset_embeddings'
 
 DEFAULT_MODEL_ID = 'all-MiniLM-L6-v2'
 
-def get_embeddings(dataset, document_name: str, model: SentenceTransformer) -> pd.DataFrame:
+def get_embeddings(dataset, document_name: str, model: SentenceTransformer, batch_size: int = 32) -> pd.DataFrame:
     filtered = dataset.filter(lambda row: row['title'] == document_name)
-    embeddings = model.encode(filtered['question'])
+    embeddings = model.encode(filtered['question'], batch_size=batch_size)
 
     df = pd.DataFrame(embeddings)
     df.index = filtered['id']
@@ -35,8 +35,14 @@ def main():
     else:
         filename = '' # Process al files
 
+    if len(sys.argv) > 3 and sys.argv[3].isdigit():
+        batch_size = int(sys.argv[3])
+    else:
+        batch_size = 32
+
     # Loading embeddings model
-    model = SentenceTransformer(model_id)
+    model = SentenceTransformer(model_id, model_kwargs={'device_map': 'sequential'})
+    print("Model Device:", model.device)
 
     # Loading the questions
     dataset = load_dataset(DATASET_NAME)
@@ -48,10 +54,10 @@ def main():
     os.makedirs(destination_dir, exist_ok=True)
     if filename == '':
         for title in sorted(set(dataset['title'])):
-            embeddings = get_embeddings(dataset, title, model)
+            embeddings = get_embeddings(dataset, title, model, batch_size)
             embeddings.to_csv(os.path.join(destination_dir, f"{title}.csv"), sep=',')
     else:
-        embeddings = get_embeddings(dataset, filename, model)
+        embeddings = get_embeddings(dataset, filename, model, batch_size)
         embeddings.to_csv(os.path.join(destination_dir, f"{filename}.csv"), sep=',')
 
 if __name__ == '__main__':

@@ -6,3 +6,4 @@ pandas==2.3.1
 datasets==4.0.0
 matplotlib==3.10.5
 hf_xet==1.1.8
+dotenv==0.9.9

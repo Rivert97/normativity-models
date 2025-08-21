@@ -12,15 +12,15 @@ EMBEDDINGS_DIR = './data_embeddings'
 
 DEFAULT_MODEL_ID = 'all-MiniLM-L6-v2'
 
-def get_file_embeddings(path: str, model: SentenceTransformer) -> pd.DataFrame:
-        data = pd.read_csv(path, sep=',')
-        print(data.head())
-        sentences = data['sentences'].tolist()
+def get_file_embeddings(path: str, model: SentenceTransformer, batch_size: int = 32) -> pd.DataFrame:
+    data = pd.read_csv(path, sep=',')
+    print(data.head())
+    sentences = data['sentences'].tolist()
 
-        embeddings = pd.DataFrame(model.encode(sentences))
-        print(embeddings.head())
+    embeddings = pd.DataFrame(model.encode(sentences, batch_size=batch_size))
+    print(embeddings.head())
 
-        return embeddings
+    return embeddings
 
 def main():
     if len(sys.argv) > 1:
@@ -33,18 +33,24 @@ def main():
     else:
         filename = '' # Process al files
 
-    model = SentenceTransformer(model_id)
+    if len(sys.argv) > 3 and sys.argv[3].isdigit():
+        batch_size = int(sys.argv[3])
+    else:
+        batch_size = 32
+
+    model = SentenceTransformer(model_id, model_kwargs={'device_map': 'sequential'})
+    print("Model Device:", model.device)
 
     destination_dir = os.path.join(EMBEDDINGS_DIR, model_id)
     os.makedirs(destination_dir, exist_ok=True)
 
     if filename == '':
         for file in glob.glob(os.path.join(DATA_PATH, '*.csv')):
-            embeddings = get_file_embeddings(file, model)
+            embeddings = get_file_embeddings(file, model, batch_size)
             name = os.path.split(file)[1]
             embeddings.to_csv(os.path.join(destination_dir, name), sep=',')
     else:
-        embeddings = get_file_embeddings(os.path.join(DATA_PATH, filename), model)
+        embeddings = get_file_embeddings(os.path.join(DATA_PATH, filename), model, batch_size)
         embeddings.to_csv(os.path.join(destination_dir, filename), sep=',')
 
 if __name__ == '__main__':
