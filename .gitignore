@@ -1,5 +1,7 @@
 data/
 data_embeddings/
+data_embeddings_transformers/
 dataset_embeddings/
+dataset_embeddings_transformers/
 
 .env
