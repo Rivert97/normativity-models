@@ -6,16 +6,15 @@ import dotenv
 dotenv.load_dotenv()
 import pandas as pd
 from datasets import load_dataset
-import numpy as np
 
 from llama_cpp import Llama
 
 # Global variables
-MODEL_DIR = '/home/rgarcia/tesis/00_src/run/models/hub/models--JonathanMiddleton--Qwen3-Embedding-8B-GGUF/snapshots/875e1df98b106c2471e0bc8fd41121f425f789cf'
 DATASET_NAME = 'Rivert97/ug-normativity'
-EMBEDDINGS_DIR = './dataset_embeddings_transformers/Qwen/'
+EMBEDDINGS_DIR = './dataset_embeddings/'
 
-DEFAULT_MODEL_GGUF = 'Qwen3-Embedding-8B-Q4_K_M'
+DEFAULT_MODEL_DIR = '$HOME/cache/huggingface/hub/models--ChristianAzinn--gist-embedding-v0-gguf/snapshots/4a2a322d1f8c2bd0438157958f4f8f516a63cf22'
+DEFAULT_MODEL_GGUF = 'gist-embedding-v0.Q4_K_M'
 
 def get_model(model_path: str):
     model = Llama(
@@ -27,18 +26,16 @@ def get_model(model_path: str):
 
     return model
 
-def get_embeddings(dataset, document_name: str, model, batch_size = 32) -> pd.DataFrame:
-    import pdb; pdb.set_trace()
+def get_embeddings(dataset, document_name: str, model) -> pd.DataFrame:
     filtered = dataset.filter(lambda row: row['title'] == document_name)
     questions = filtered['question']
 
     all_embeddings = []
 
-    for start in range(0, len(questions), batch_size):
-        batch = questions[start:start+batch_size]
-        all_embeddings.append(model.embed(batch).cpu())
+    for question in questions:
+        all_embeddings.append(model.embed(question))
 
-    embeddings = pd.DataFrame(np.vstack(all_embeddings))
+    embeddings = pd.DataFrame(all_embeddings)
     embeddings.index = filtered['id']
     print(embeddings.head())
 
@@ -46,22 +43,22 @@ def get_embeddings(dataset, document_name: str, model, batch_size = 32) -> pd.Da
 
 def main():
     if len(sys.argv) > 1:
-        model_id = sys.argv[1]
+        model_dir = sys.argv[1]
     else:
-        model_id = DEFAULT_MODEL_GGUF
+        model_dir = DEFAULT_MODEL_DIR
 
     if len(sys.argv) > 2:
-        filename = sys.argv[2]
+        model_gguf = sys.argv[2]
+    else:
+        model_gguf = DEFAULT_MODEL_GGUF
+
+    if len(sys.argv) > 3:
+        filename = sys.argv[3]
     else:
         filename = '' # Process al files
 
-    if len(sys.argv) > 3 and sys.argv[3].isdigit():
-        batch_size = int(sys.argv[3])
-    else:
-        batch_size = 32
-
     # Loading embeddings model
-    model, tokenizer = get_model(os.path.join(MODEL_DIR, f"{model_id}.gguf"))
+    model = get_model(os.path.join(model_dir, f"{model_gguf}.gguf"))
 
     # Loading the questions
     dataset = load_dataset(DATASET_NAME)
@@ -69,14 +66,14 @@ def main():
     print(dataset)
 
     # Converting questions to embeddings
-    destination_dir = os.path.join(EMBEDDINGS_DIR, model_id)
+    destination_dir = os.path.join(EMBEDDINGS_DIR, model_gguf)
     os.makedirs(destination_dir, exist_ok=True)
     if filename == '':
         for title in sorted(set(dataset['title'])):
-            embeddings = get_embeddings(dataset, title, model, batch_size)
+            embeddings = get_embeddings(dataset, title, model)
             embeddings.to_csv(os.path.join(destination_dir, f"{title}.csv"), sep=',')
     else:
-        embeddings = get_embeddings(dataset, filename, model, batch_size)
+        embeddings = get_embeddings(dataset, filename, model)
         embeddings.to_csv(os.path.join(destination_dir, f"{filename}.csv"), sep=',')
 
 if __name__ == '__main__':
