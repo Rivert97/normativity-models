@@ -20,7 +20,7 @@ def get_model(model_id: str, model_gguf: str):
         filename=model_gguf,
         embedding=True,
         n_gpu_layers=-1,
-        n_cntx=8192,
+        n_ctx=8192,
         verbose=False,
     )
 
