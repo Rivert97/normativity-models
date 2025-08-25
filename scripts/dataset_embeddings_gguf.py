@@ -13,15 +13,17 @@ from llama_cpp import Llama
 DATASET_NAME = 'Rivert97/ug-normativity'
 EMBEDDINGS_DIR = './dataset_embeddings/'
 
-DEFAULT_MODEL_DIR = '$HOME/cache/huggingface/hub/models--ChristianAzinn--gist-embedding-v0-gguf/snapshots/4a2a322d1f8c2bd0438157958f4f8f516a63cf22'
-DEFAULT_MODEL_GGUF = 'gist-embedding-v0.Q4_K_M'
+DEFAULT_MODEL_ID = 'Qwen/Qwen3-Embedding-0.6B-GGUF'
+DEFAULT_MODEL_GGUF = 'Qwen3-Embedding-0.6B-Q8_0'
 
-def get_model(model_path: str):
-    model = Llama(
-        model_path=model_path,
+def get_model(model_id: str, model_gguf: str):
+    model = Llama.from_pretrained(
+        repo_id=model_id,
+        filename=model_gguf,
         embedding=True,
-        n_ctx=2048,
         n_gpu_layers=-1,
+        n_cntx=8192,
+        verbose=False,
     )
 
     return model
@@ -43,9 +45,9 @@ def get_embeddings(dataset, document_name: str, model) -> pd.DataFrame:
 
 def main():
     if len(sys.argv) > 1:
-        model_dir = sys.argv[1]
+        model_id = sys.argv[1]
     else:
-        model_dir = DEFAULT_MODEL_DIR
+        model_id = DEFAULT_MODEL_ID
 
     if len(sys.argv) > 2:
         model_gguf = sys.argv[2]
@@ -58,7 +60,7 @@ def main():
         filename = '' # Process al files
 
     # Loading embeddings model
-    model = get_model(os.path.join(model_dir, f"{model_gguf}.gguf"))
+    model = get_model(model_id, f"{model_gguf}.gguf")
 
     # Loading the questions
     dataset = load_dataset(DATASET_NAME)
