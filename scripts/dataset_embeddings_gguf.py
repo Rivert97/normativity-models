@@ -1,6 +1,7 @@
 # Module imports
 import os
 import sys
+import subprocess
 
 import dotenv
 dotenv.load_dotenv()
@@ -25,6 +26,8 @@ def get_model(model_id: str, model_gguf: str):
         n_ctx=8192,
         verbose=False,
     )
+    print("Memory after model load:")
+    print(subprocess.run(['nvidia-smi']))
 
     return model
 
@@ -36,6 +39,9 @@ def get_embeddings(dataset, document_name: str, model) -> pd.DataFrame:
 
     for question in questions:
         all_embeddings.append(model.embed(question))
+
+    print("Memory after embeddings extraction:")
+    print(subprocess.run(['nvidia-smi']))
 
     embeddings = pd.DataFrame(all_embeddings)
     embeddings.index = filtered['id']

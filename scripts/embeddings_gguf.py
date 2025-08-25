@@ -1,6 +1,7 @@
 import os
 import glob
 import sys
+import subprocess
 
 import dotenv
 dotenv.load_dotenv()
@@ -23,6 +24,8 @@ def get_model(model_id: str, model_gguf: str):
         n_ctx=8192,
         verbose=False,
     )
+    print("Memory after model load:")
+    print(subprocess.run(['nvidia-smi']))
 
     return model
 
@@ -35,6 +38,9 @@ def get_file_embeddings(path: str, model) -> pd.DataFrame:
 
     for sentence in sentences:
         all_embeddings.append(model.embed(sentence))
+
+    print("Memory after embeddings extraction:")
+    print(subprocess.run(['nvidia-smi']))
 
     embeddings = pd.DataFrame(all_embeddings)
     print(embeddings.head())
