@@ -1,5 +1,7 @@
 import sys
 
+import dotenv
+dotenv.load_dotenv()
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
