@@ -1,6 +1,7 @@
 import os
 import glob
 import sys
+import subprocess
 
 import dotenv
 dotenv.load_dotenv()
@@ -18,6 +19,10 @@ def get_file_embeddings(path: str, model: SentenceTransformer, batch_size: int =
     sentences = data['sentences'].tolist()
 
     embeddings = pd.DataFrame(model.encode(sentences, batch_size=batch_size))
+
+    print("Memory after embeddings extraction:")
+    print(subprocess.run(['nvidia-smi']))
+
     print(embeddings.head())
 
     return embeddings
@@ -40,6 +45,8 @@ def main():
 
     model = SentenceTransformer(model_id, model_kwargs={'device_map': 'auto'})
     print("Model Device:", model.device)
+    print("Memory after model load:")
+    print(subprocess.run(['nvidia-smi']))
 
     destination_dir = os.path.join(EMBEDDINGS_DIR, model_id)
     os.makedirs(destination_dir, exist_ok=True)

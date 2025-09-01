@@ -1,6 +1,7 @@
 # Module imports
 import os
 import sys
+import subprocess
 
 import dotenv
 dotenv.load_dotenv()
@@ -17,6 +18,9 @@ DEFAULT_MODEL_ID = 'all-MiniLM-L6-v2'
 def get_embeddings(dataset, document_name: str, model: SentenceTransformer, batch_size: int = 32) -> pd.DataFrame:
     filtered = dataset.filter(lambda row: row['title'] == document_name)
     embeddings = model.encode(filtered['question'], batch_size=batch_size)
+
+    print("Memory after embeddings extraction:")
+    print(subprocess.run(['nvidia-smi']))
 
     df = pd.DataFrame(embeddings)
     df.index = filtered['id']
@@ -43,6 +47,8 @@ def main():
     # Loading embeddings model
     model = SentenceTransformer(model_id, model_kwargs={'device_map': 'auto'})
     print("Model Device:", model.device)
+    print("Memory after model load:")
+    print(subprocess.run(['nvidia-smi']))
 
     # Loading the questions
     dataset = load_dataset(DATASET_NAME)

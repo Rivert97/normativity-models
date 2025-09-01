@@ -1,6 +1,7 @@
 import os
 import glob
 import sys
+import subprocess
 
 import dotenv
 dotenv.load_dotenv()
@@ -19,6 +20,9 @@ DEFAULT_MODEL_ID = 'Qwen/Qwen3-Embedding-0.6B'
 def get_model(model_name: str):
     tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side='left')
     model = AutoModel.from_pretrained(model_name, device_map='auto')
+
+    print("Memory after model load:")
+    print(subprocess.run(['nvidia-smi']))
 
     return model, tokenizer
 
@@ -49,6 +53,9 @@ def get_file_embeddings(path: str, model, tokenizer, batch_size = 32) -> pd.Data
         # normalize embeddings
         sentence_embeddings = F.normalize(sentence_embeddings, p=2, dim=1)
         all_embeddings.append(sentence_embeddings.cpu().numpy())
+
+    print("Memory after embeddings extraction:")
+    print(subprocess.run(['nvidia-smi']))
 
     embeddings = pd.DataFrame(np.vstack(all_embeddings))
     print(embeddings.head())
