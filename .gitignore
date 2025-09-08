@@ -2,7 +2,9 @@ run/
 data/
 data_embeddings/
 data_embeddings_transformers/
+dataset/
 dataset_embeddings/
 dataset_embeddings_transformers/
+results_*/
 
 .env
