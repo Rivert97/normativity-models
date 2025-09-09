@@ -195,7 +195,7 @@ for model_opts in MODELS:
     answers = []
     responses = []
     q_total = len(questions)
-    for q_idx, question in enumerate(questions[:3]):
+    for q_idx, question in enumerate(questions):
         documents = []
         for doc_idx in top_k_info['embeddings_idx'][question['question']['id']]:
             data_doc = data.loc[doc_idx]
