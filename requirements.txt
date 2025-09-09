@@ -7,3 +7,4 @@ datasets==4.0.0
 matplotlib==3.10.5
 hf_xet==1.1.8
 dotenv==0.9.9
+rouge_score==0.1.2

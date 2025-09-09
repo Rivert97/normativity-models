@@ -1,14 +1,15 @@
 import os
 import glob
 import json
+import subprocess
 
 import dotenv
 dotenv.load_dotenv()
 import pandas as pd
 import numpy as np
 from sentence_transformers import util
-import evaluate
 import torch
+from rouge_score import rouge_scorer, scoring
 
 from .lib.data import Document
 from .lib.models import Builders
@@ -122,13 +123,20 @@ def get_top_k_scores_info(questions, data, embeddings):
     return top_k_info
 
 def calculate_rouge(responses, answers):
-    rouge = evaluate.load('rouge')
-    score = rouge.compute(predictions=responses,
-                            references=answers)
+    scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"], use_stemmer=True)
+    aggregator = scoring.BootstrapAggregator()
 
-    return score
+    for pred, ref in zip(responses, answers):
+        score = scorer.score(ref, pred)
+        aggregator.add_scores(score)
+    result = aggregator.aggregate()
+
+    return {metric: result[metric].mid.fmeasure for metric in result}
 
 def calculate_rouge_by_file(responses, answers):
+    scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"], use_stemmer=True)
+    aggregator = scoring.BootstrapAggregator()
+
     files = list(set([res['file'] for res in responses]))
     metrics = {
         'rouge1': np.zeros((len(files),), dtype=np.float32),
@@ -140,9 +148,11 @@ def calculate_rouge_by_file(responses, answers):
         file_responses = filter(lambda r: r['file'] == f, responses)
         file_answers = filter(lambda a: a['file'] == f, answers)
 
-        rouge = evaluate.load('rouge')
-        score = rouge.compute(predictions=[r['text'] for r in file_responses],
-                                references=[a['text'] for a in file_answers])
+        for pred, ref in zip([r['text'] for r in file_responses], [a['text'] for a in file_answers]):
+            single_score = scorer.score(ref, pred)
+            aggregator.add_scores(single_score)
+        result = aggregator.aggregate()
+        score = {metric: result[metric].mid.fmeasure for metric in result}
 
         metrics['rouge1'][f_idx] = score['rouge1']
         metrics['rouge2'][f_idx] = score['rouge2']
@@ -180,10 +190,12 @@ for model_opts in MODELS:
     top_k_info = get_top_k_scores_info(questions, data, embeddings)
     model = Builders[model_opts['id']].value.build_from_variant(model_opts['variant'])
 
+    print(subprocess.run(['nvidia-smi']))
+
     answers = []
     responses = []
     q_total = len(questions)
-    for q_idx, question in enumerate(questions):
+    for q_idx, question in enumerate(questions[:3]):
         documents = []
         for doc_idx in top_k_info['embeddings_idx'][question['question']['id']]:
             data_doc = data.loc[doc_idx]
