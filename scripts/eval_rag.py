@@ -26,6 +26,7 @@ DATA_EMBEDDINGS_PATH = f'./data_embeddings'
 DATASET_EMBEDDINGS_PATH = f'./dataset_embeddings'
 DATASET_NAME = 'Rivert97/ug-normativity'
 RESULTS_DIR = './results_rag'
+RESPONSES_DIR = './responses'
 
 # Other variables
 k = 5
@@ -185,10 +186,12 @@ def update_csv_data(filename, new_data, axis=0):
 
 for model_opts in MODELS:
     print(f"Procesando {model_opts['full_id']}")
+
     data, embeddings, dataset, questions_embeddings = load_csv_data(os.path.join(DATA_EMBEDDINGS_PATH, model_opts['full_id']), os.path.join(DATASET_EMBEDDINGS_PATH, model_opts['full_id']))
     questions = find_questions_related_chunks(dataset, questions_embeddings, data, embeddings)
     top_k_info = get_top_k_scores_info(questions, data, embeddings)
     model = Builders[model_opts['id']].value.build_from_variant(model_opts['variant'])
+    os.makedirs(os.path.join(RESPONSES_DIR, model_opts['full_id']), exist_ok=True)
 
     print(subprocess.run(['nvidia-smi']))
 
@@ -234,6 +237,8 @@ for model_opts in MODELS:
             'text': response
         }
         responses.append(res)
+        df_responses = pd.DataFrame(responses)
+        df_responses.to_csv(os.path.join(RESPONSES_DIR, model_opts['full_id'], 'predicted.csv'), sep=',')
 
         # Appending answer
         answ = {
@@ -241,6 +246,8 @@ for model_opts in MODELS:
             'text': question['question']['answers']['text'][0],
         }
         answers.append(answ)
+        df_answers = pd.DataFrame(answers)
+        df_answers.to_csv(os.path.join(RESPONSES_DIR, model_opts['full_id'], 'reference.csv'), sep=',')
 
     rouge_score = calculate_rouge(
         [res['text'] for res in responses],
