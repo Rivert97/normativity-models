@@ -198,6 +198,9 @@ for model_opts in MODELS:
     for q_idx, question in enumerate(questions):
         print(f"{q_idx} - Question: {question['question']['question']}")
 
+        if not question['question']['answers']['text'][0]:
+            continue
+
         documents = []
         for doc_idx in top_k_info['embeddings_idx'][question['question']['id']]:
             data_doc = data.loc[doc_idx]
@@ -220,6 +223,9 @@ for model_opts in MODELS:
                 print("Document:", doc.print_to_console())
             continue
 
+        if not response:
+            continue
+
         print("Response:", response)
 
         # Appending model response
@@ -235,8 +241,6 @@ for model_opts in MODELS:
             'text': question['question']['answers']['text'][0],
         }
         answers.append(answ)
-
-        #print(f"Processed {q_idx+1}/{q_total}", end='\r')
 
     rouge_score = calculate_rouge(
         [res['text'] for res in responses],
