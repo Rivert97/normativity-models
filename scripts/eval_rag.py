@@ -17,8 +17,8 @@ from .lib.models import Builders
 # Gobal variables
 MODELS = [
     {'full_id': 'Qwen/Qwen3-Embedding-0.6B', 'id': 'QWEN', 'variant': '3-0.6B'},
-    {'full_id': 'Qwen/Qwen3-Embedding-4B', 'id': 'QWEN', 'variant': '3-4B'},
-    {'full_id': 'Qwen/Qwen3-Embedding-8B', 'id': 'QWEN', 'variant': '3-8B'},
+    #{'full_id': 'Qwen/Qwen3-Embedding-4B', 'id': 'QWEN', 'variant': '3-4B'},
+    #{'full_id': 'Qwen/Qwen3-Embedding-8B', 'id': 'QWEN', 'variant': '3-8B'},
 ]
 DATA_PATH = './data'
 DATASET_PATH = './dataset/ug-normativity-v0.1.json'
@@ -236,7 +236,7 @@ for model_opts in MODELS:
         }
         answers.append(answ)
 
-        print(f"Processed {q_idx+1}/{q_total}", end='\r')
+        #print(f"Processed {q_idx+1}/{q_total}", end='\r')
 
     rouge_score = calculate_rouge(
         [res['text'] for res in responses],
