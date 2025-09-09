@@ -196,6 +196,8 @@ for model_opts in MODELS:
     responses = []
     q_total = len(questions)
     for q_idx, question in enumerate(questions):
+        print(f"{q_idx} - Question: {question['question']['question']}")
+
         documents = []
         for doc_idx in top_k_info['embeddings_idx'][question['question']['id']]:
             data_doc = data.loc[doc_idx]
@@ -214,10 +216,11 @@ for model_opts in MODELS:
             response = model.query_with_documents(question['question']['question'], documents, add_to_history=False)
         except torch.OutOfMemoryError as e:
             print(e)
-            print("Question:", question['question']['question'])
             for doc in documents:
-                print("    import pdb; pdb.set_trace()Document:", doc.print_to_console())
+                print("Document:", doc.print_to_console())
             continue
+
+        print("Response:", response)
 
         # Appending model response
         res = {
