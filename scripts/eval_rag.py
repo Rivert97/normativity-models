@@ -134,7 +134,7 @@ def calculate_rouge(responses, answers):
 
     return {metric: result[metric].mid.fmeasure for metric in result}
 
-def calculate_rouge_by_file(responses, answers):
+def calculate_rouge_by_file(responses, answers, model_opts):
     scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"], use_stemmer=True)
     aggregator = scoring.BootstrapAggregator()
 
@@ -160,7 +160,14 @@ def calculate_rouge_by_file(responses, answers):
         metrics['rougeL'][f_idx] = score['rougeL']
         metrics['rougeLsum'][f_idx] = score['rougeLsum']
 
-    return pd.DataFrame(metrics, index=files)
+    model_identifier = f"{model_opts['full_id']}_{model_opts['id']}-{model_opts['variant']}"
+    return pd.DataFrame({
+            f'{model_identifier} rouge1': metrics['rouge1'],
+            f'{model_identifier} rouge2': metrics['rouge2'],
+            f'{model_identifier} rougeL': metrics['rougeL'],
+            f'{model_identifier} rougeLsum': metrics['rougeLsum']
+        },
+        index=files)
 
 def update_csv_data(filename, new_data, axis=0):
     if os.path.exists(filename):
@@ -191,7 +198,8 @@ for model_opts in MODELS:
     questions = find_questions_related_chunks(dataset, questions_embeddings, data, embeddings)
     top_k_info = get_top_k_scores_info(questions, data, embeddings)
     model = Builders[model_opts['id']].value.build_from_variant(model_opts['variant'])
-    os.makedirs(os.path.join(RESPONSES_DIR, model_opts['full_id']), exist_ok=True)
+    responses_dir = os.path.join(RESPONSES_DIR, f'{model_opts['full_id']}_{model_opts['id']}-{model_opts['variant']}')
+    os.makedirs(responses_dir, exist_ok=True)
 
     print(subprocess.run(['nvidia-smi']))
 
@@ -238,7 +246,7 @@ for model_opts in MODELS:
         }
         responses.append(res)
         df_responses = pd.DataFrame(responses)
-        df_responses.to_csv(os.path.join(RESPONSES_DIR, model_opts['full_id'], 'predicted.csv'), sep=',')
+        df_responses.to_csv(os.path.join(responses_dir, 'predicted.csv'), sep=',')
 
         # Appending answer
         answ = {
@@ -247,20 +255,20 @@ for model_opts in MODELS:
         }
         answers.append(answ)
         df_answers = pd.DataFrame(answers)
-        df_answers.to_csv(os.path.join(RESPONSES_DIR, model_opts['full_id'], 'reference.csv'), sep=',')
+        df_answers.to_csv(os.path.join(responses_dir, 'reference.csv'), sep=',')
 
     rouge_score = calculate_rouge(
         [res['text'] for res in responses],
         [answ['text'] for answ in answers]
     )
 
-    rouge = pd.DataFrame(rouge_score, index=[model_opts['full_id']])
+    rouge = pd.DataFrame(rouge_score, index=[f"{model_opts['full_id']}_{model_opts['id']}-{model_opts['variant']}"])
     rouge_filename = os.path.join(RESULTS_DIR, f'rouge_top_{k}.csv')
     update_csv_data(rouge_filename, rouge)
 
-    rouge_by_file= calculate_rouge_by_file(responses, answers)
+    rouge_by_file= calculate_rouge_by_file(responses, answers, model_opts)
     rouge_by_file_filename = os.path.join(RESULTS_DIR, f'rouge_by_file_top_{k}.csv')
-    update_csv_data(rouge_by_file_filename, rouge_by_file)
+    update_csv_data(rouge_by_file_filename, rouge_by_file, axis=1)
 
     del model
     torch.cuda.empty_cache()
