@@ -14,7 +14,7 @@ EMBEDDINGS_DIR = './data_embeddings'
 DEFAULT_MODEL_ID = 'all-MiniLM-L6-v2'
 
 def get_file_embeddings(path: str, model: SentenceTransformer, batch_size: int = 32) -> pd.DataFrame:
-    data = pd.read_csv(path, sep=',')
+    data = pd.read_csv(path, sep=',', index_col=0)
     print(data.head())
     sentences = data['sentences'].tolist()
 

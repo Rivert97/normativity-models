@@ -19,7 +19,7 @@ def get_model(model_dir: str, model_gguf: str):
         model_path=os.path.join(model_dir, model_gguf),
         embedding=True,
         n_gpu_layers=-1,
-        n_ctx=8192,
+        n_ctx=512,
         verbose=False,
     )
     print("Memory after model load:")
