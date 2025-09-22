@@ -13,7 +13,7 @@ from torch import Tensor
 import numpy as np
 
 DATA_PATH = './data'
-EMBEDDINGS_DIR = './data_embeddings_transformers'
+EMBEDDINGS_DIR = './data_embeddings'
 
 DEFAULT_MODEL_ID = 'Qwen/Qwen3-Embedding-0.6B'
 
@@ -31,7 +31,7 @@ def get_file_embeddings(path: str, model, tokenizer, batch_size = 32) -> pd.Data
     print(data.head())
     sentences = data['sentences'].tolist()
 
-    max_length = 8192
+    max_length = 2048
 
     all_embeddings = []
 

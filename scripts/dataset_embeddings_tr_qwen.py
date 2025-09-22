@@ -15,7 +15,7 @@ import numpy as np
 
 # Global variables
 DATASET_NAME = 'Rivert97/ug-normativity'
-EMBEDDINGS_DIR = './dataset_embeddings_transformers'
+EMBEDDINGS_DIR = './dataset_embeddings'
 
 DEFAULT_MODEL_ID = 'Qwen/Qwen3-Embedding-0.6B'
 
@@ -32,7 +32,7 @@ def get_embeddings(dataset, document_name: str, model, tokenizer, batch_size = 3
     filtered = dataset.filter(lambda row: row['title'] == document_name)
     questions = filtered['question']
 
-    max_length = 8192
+    max_length = 512
 
     all_embeddings = []
 
