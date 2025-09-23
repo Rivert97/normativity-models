@@ -18,8 +18,6 @@ from .lib.models import Builders
 # Gobal variables
 MODELS = [
     {'full_id': 'Qwen/Qwen3-Embedding-8B', 'id': 'QWEN', 'variant': '3-0.6B'},
-    {'full_id': 'Qwen/Qwen3-Embedding-4B', 'id': 'QWEN', 'variant': '3-4B'},
-    {'full_id': 'Qwen/Qwen3-Embedding-8B', 'id': 'QWEN', 'variant': '3-8B'},
 ]
 DATA_PATH = './data'
 DATA_EMBEDDINGS_PATH = f'./data_embeddings'
@@ -27,6 +25,8 @@ DATASET_EMBEDDINGS_PATH = f'./dataset_embeddings'
 DATASET_NAME = 'Rivert97/ug-normativity'
 RESULTS_DIR = './results_rag'
 RESPONSES_DIR = './responses'
+START = 0
+END = None
 
 # Other variables
 k = 5
@@ -135,7 +135,7 @@ def calculate_rouge_by_file(responses, answers, model_opts):
     scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"], use_stemmer=True)
     aggregator = scoring.BootstrapAggregator()
 
-    files = list(set([res['file'] for res in responses]))
+    files = responses['file'].unique()
     metrics = {
         'rouge1': np.zeros((len(files),), dtype=np.float32),
         'rouge2': np.zeros((len(files),), dtype=np.float32),
@@ -143,10 +143,10 @@ def calculate_rouge_by_file(responses, answers, model_opts):
         'rougeLsum': np.zeros((len(files),), dtype=np.float32),
     }
     for f_idx, f in enumerate(files):
-        file_responses = filter(lambda r: r['file'] == f, responses)
-        file_answers = filter(lambda a: a['file'] == f, answers)
+        file_responses = responses[responses['file'] == f]
+        file_answers = answers[answers['file'] == f]
 
-        for pred, ref in zip([r['text'] for r in file_responses], [a['text'] for a in file_answers]):
+        for pred, ref in zip(file_responses['text'], file_answers['text']):
             single_score = scorer.score(ref, pred)
             aggregator.add_scores(single_score)
         result = aggregator.aggregate()
@@ -201,11 +201,21 @@ for model_opts in MODELS:
 
     print(subprocess.run(['nvidia-smi']))
 
-    answers = []
-    responses = []
-    contexts = []
+    if os.path.exists(os.path.join(responses_dir, 'predicted.csv')):
+        answers = pd.read_csv(os.path.join(responses_dir, 'reference.csv'), sep=',', index_col=0)
+        responses = pd.read_csv(os.path.join(responses_dir, 'predicted.csv'), sep=',', index_col=0)
+        contexts = pd.read_csv(os.path.join(responses_dir, 'context.csv'), sep=',', index_col=0)
+    else:
+        answers = pd.DataFrame(columns=['file', 'text'])
+        responses = pd.DataFrame(columns=['file', 'text'])
+        contexts = pd.DataFrame(columns=['file', 'context'])
     q_total = len(questions)
     for q_idx, question in enumerate(questions):
+        if q_idx < START:
+            continue
+        if END is not None and q_idx >= END:
+            break
+
         print(f"{q_idx} - Question: {question['question']['question']}")
 
         if not question['question']['answers']['text'][0]:
@@ -243,31 +253,34 @@ for model_opts in MODELS:
             'file': question['question']['title'],
             'text': response
         }
-        responses.append(res)
-        df_responses = pd.DataFrame(responses)
-        df_responses.to_csv(os.path.join(responses_dir, 'predicted.csv'), sep=',')
+        df_res = pd.DataFrame(res, index=[q_idx])
+        responses = pd.concat([responses, df_res])
+        responses.to_csv(os.path.join(responses_dir, 'predicted.csv'), sep=',')
 
         # Appending answer
         answ = {
             'file': question['question']['title'],
             'text': question['question']['answers']['text'][0],
         }
-        answers.append(answ)
-        df_answers = pd.DataFrame(answers)
-        df_answers.to_csv(os.path.join(responses_dir, 'reference.csv'), sep=',')
+        df_answ = pd.DataFrame(answ, index=[q_idx])
+        answers = pd.concat([answers, df_answ])
+        answers.to_csv(os.path.join(responses_dir, 'reference.csv'), sep=',')
 
         # Appending used context
         cntx = {
             'file': question['question']['title'],
             'context': '|'.join([doc.metadata['document_name'] + ';' + doc.metadata['title'] for doc in documents])
         }
-        contexts.append(cntx)
-        df_contexts = pd.DataFrame(contexts)
-        df_contexts.to_csv(os.path.join(responses_dir, 'context.csv'), sep=',')
+        df_cntx = pd.DataFrame(cntx, index=[q_idx])
+        contexts = pd.concat([contexts, df_cntx])
+        contexts.to_csv(os.path.join(responses_dir, 'context.csv'), sep=',')
+
+        if q_idx % 100 == 0:
+            print(subprocess.run(['nvidia-smi']))
 
     rouge_score = calculate_rouge(
-        [res['text'] for res in responses],
-        [answ['text'] for answ in answers]
+        [res['text'] for _, res in responses.iterrows()],
+        [answ['text'] for _, answ in answers.iterrows()]
     )
 
     rouge = pd.DataFrame(rouge_score, index=[f"{model_opts['full_id']}_{model_opts['id']}-{model_opts['variant']}"])
