@@ -10,18 +10,18 @@ import numpy as np
 from sentence_transformers import util
 import torch
 from rouge_score import rouge_scorer, scoring
+from datasets import load_dataset
 
 from .lib.data import Document
 from .lib.models import Builders
 
 # Gobal variables
 MODELS = [
-    {'full_id': 'Qwen/Qwen3-Embedding-0.6B', 'id': 'QWEN', 'variant': '3-0.6B'},
+    {'full_id': 'Qwen/Qwen3-Embedding-8B', 'id': 'QWEN', 'variant': '3-0.6B'},
     {'full_id': 'Qwen/Qwen3-Embedding-4B', 'id': 'QWEN', 'variant': '3-4B'},
     {'full_id': 'Qwen/Qwen3-Embedding-8B', 'id': 'QWEN', 'variant': '3-8B'},
 ]
 DATA_PATH = './data'
-DATASET_PATH = './dataset/ug-normativity-v0.1.json'
 DATA_EMBEDDINGS_PATH = f'./data_embeddings'
 DATASET_EMBEDDINGS_PATH = f'./dataset_embeddings'
 DATASET_NAME = 'Rivert97/ug-normativity'
@@ -30,7 +30,7 @@ RESPONSES_DIR = './responses'
 
 # Other variables
 k = 5
-file_excludes = ['reglamento-de-responsabilidades-y-sanciones-en-materia-de-violencia-de-genero']
+file_excludes = []
 score_metric = 'dot' # dot, cos
 
 def load_csv_data(data_embeddings_dirname, dataset_embeddings_dirname):
@@ -51,7 +51,7 @@ def load_csv_data(data_embeddings_dirname, dataset_embeddings_dirname):
         if os.path.splitext(os.path.split(data_filename)[1])[0] in file_excludes:
             continue
 
-        data = pd.read_csv(data_filename, sep=',')
+        data = pd.read_csv(data_filename, sep=',', index_col=0)
         embeddings = pd.read_csv(embeddings_filename, sep=',', index_col=0)
         questions_embeddings = pd.read_csv(questions_filename, sep=',', index_col=0)
 
@@ -63,10 +63,7 @@ def load_csv_data(data_embeddings_dirname, dataset_embeddings_dirname):
     embeddings = pd.concat(all_embeddings, ignore_index=True)
     questions_embeddings = pd.concat(all_questions_embeddings)
 
-    with open(DATASET_PATH, 'r', encoding='utf-8') as f:
-        dataset = json.load(f)
-
-    return data, embeddings, dataset, questions_embeddings
+    return data, embeddings, questions_embeddings
 
 def find_questions_related_chunks(dataset, questions_embeddings, data, embeddings):
     # For each question find its chunk
@@ -79,17 +76,17 @@ def find_questions_related_chunks(dataset, questions_embeddings, data, embedding
         tmp_question = {
             'question': question,
             'question_embeddings': questions_embeddings.loc[question['id']].values,
-            'chunk_idx': None,
-            'chunk': None,
-            'chunk_embeddings': None,
+            'chunk_idx': [],
+            'chunk': [],
+            'chunk_embeddings': [],
         }
 
-        for chunk_idx, chunk in data.loc[data['document_name'] == question['title']].iterrows():
-            if chunk['path'].lower().endswith(question['context'].lower().strip()):
-                tmp_question['chunk_idx'] = chunk_idx
-                tmp_question['chunk'] = chunk
-                tmp_question['chunk_embeddings'] = embeddings.loc[chunk_idx].values
-                break
+        for path, chunks in data.loc[data['document_name'] == question['title']].groupby('path'):
+            if path.lower().endswith(question['context'].lower().strip()):
+                for chunk_idx, chunk in chunks.sort_values('num').iterrows():
+                    tmp_question['chunk_idx'].append(chunk_idx)
+                    tmp_question['chunk'].append(chunk)
+                    tmp_question['chunk_embeddings'].append(embeddings.loc[chunk_idx].values)
 
         if tmp_question['chunk_idx'] is not None:
             questions.append(tmp_question)
@@ -192,9 +189,10 @@ def update_csv_data(filename, new_data, axis=0):
     updated_df.to_csv(filename, sep=',')
 
 for model_opts in MODELS:
-    print(f"Procesando {model_opts['full_id']}")
+    print(f"Procesando {model_opts['full_id']} with {model_opts['id']}-{model_opts['variant']}")
 
-    data, embeddings, dataset, questions_embeddings = load_csv_data(os.path.join(DATA_EMBEDDINGS_PATH, model_opts['full_id']), os.path.join(DATASET_EMBEDDINGS_PATH, model_opts['full_id']))
+    dataset = load_dataset(DATASET_NAME)['train']
+    data, embeddings, questions_embeddings = load_csv_data(os.path.join(DATA_EMBEDDINGS_PATH, model_opts['full_id']), os.path.join(DATASET_EMBEDDINGS_PATH, model_opts['full_id']))
     questions = find_questions_related_chunks(dataset, questions_embeddings, data, embeddings)
     top_k_info = get_top_k_scores_info(questions, data, embeddings)
     model = Builders[model_opts['id']].value.build_from_variant(model_opts['variant'])
@@ -205,6 +203,7 @@ for model_opts in MODELS:
 
     answers = []
     responses = []
+    contexts = []
     q_total = len(questions)
     for q_idx, question in enumerate(questions):
         print(f"{q_idx} - Question: {question['question']['question']}")
@@ -256,6 +255,15 @@ for model_opts in MODELS:
         answers.append(answ)
         df_answers = pd.DataFrame(answers)
         df_answers.to_csv(os.path.join(responses_dir, 'reference.csv'), sep=',')
+
+        # Appending used context
+        cntx = {
+            'file': question['question']['title'],
+            'context': '|'.join([doc.metadata['document_name'] + ';' + doc.metadata['title'] for doc in documents])
+        }
+        contexts.append(cntx)
+        df_contexts = pd.DataFrame(contexts)
+        df_contexts.to_csv(os.path.join(responses_dir, 'context.csv'), sep=',')
 
     rouge_score = calculate_rouge(
         [res['text'] for res in responses],

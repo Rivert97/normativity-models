@@ -467,6 +467,7 @@ class Qwen3(Model):
             enable_thinking=self.thinking, # Switches between thinking and non-thinking modes
         )
         model_inputs = self.tokenizer([text], return_tensors="pt").to(self.model.device)
+        print("Tokens input:", len(model_inputs['input_ids'][0]))
 
         # Conduct text completion
         generated_tokens = self.model.generate(
@@ -484,6 +485,7 @@ class Qwen3(Model):
 
         #thinking_content =
         #    self.tokenizer.decode(output_ids[:index], skip_special_tokens=True).strip("\n")
+        print("Tokens output:", len(output_ids[index:]))
         content = self.tokenizer.decode(output_ids[index:], skip_special_tokens=True).strip("\n")
 
         return content
