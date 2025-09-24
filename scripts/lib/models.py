@@ -1,7 +1,6 @@
 """Module to define multiple types of models provided by HuggingFace."""
 
-from abc import abstractmethod
-import sys
+from abc import ABC, abstractmethod
 from enum import Enum
 
 import transformers
@@ -15,7 +14,7 @@ from .data import Document
 torch.backends.cuda.enable_mem_efficient_sdp(False)
 torch.backends.cuda.enable_flash_sdp(False)
 
-class Model:
+class Model(ABC):
     """Base class for all the models."""
 
     def __init__(self, multimodal:bool=False):
@@ -23,26 +22,45 @@ class Model:
 
         self.messages = self.__get_init_messages()
 
-    @abstractmethod
-    def query(self, query:str, add_to_history:bool=True) -> str:
+    def query(self, query:str, add_to_history:bool=True):
         """Query an answer based on a question."""
+        messages = self.str_to_message(query)
 
-    @abstractmethod
-    def query_with_documents(self, query: str, documents:list[Document],
-                             add_to_history:bool=True) -> str:
+        response = self.get_response_from_model(messages)
+
+        if add_to_history:
+            self.messages += messages + self.response_to_message(response)
+
+        return response
+
+    def query_with_documents(self, query:str, documents:list[Document], add_to_history:bool=True):
         """Query an answer based on a question and some documents passed as context."""
+        messages = self.str_to_message_with_context(query, documents)
 
-    @abstractmethod
+        response = self.get_response_from_model(messages)
+
+        if add_to_history:
+            self.messages += self.str_to_message(query) + self.response_to_message(response)
+
+        return response
+
     def query_with_conversation(self, messages:list[dict[str, str]]) -> str:
         """Query an answer based on a full conversation."""
+        response = self.get_response_from_model(messages)
 
-    @abstractmethod
+        return self.response_to_message(response)
+
     def query_with_conversation_and_documents(self, messages:list[dict[str, str]],
                                               documents:list[Document]) -> str:
         """
         Query an answer based on a full conversation and some documents passed as context to
         the last question.
         """
+        last_query = messages[-1]['content']
+        messages = messages[:-1] + self.str_to_message_with_context(last_query, documents)
+        response = self.get_response_from_model(messages)
+
+        return self.response_to_message(response)
 
     def str_to_message(self, query:str):
         """Add a new message to be sent to the model."""
@@ -71,8 +89,13 @@ class Model:
 
         return [response]
 
+    @abstractmethod
+    def get_response_from_model(self, messages: list[dict[str, str]]) -> str:
+        """Calls the model inference method and returns an answer."""
+        pass
+
     def __get_init_messages(self) -> list[dict[str:str|dict]]:
-        instruction = 'Eres un experto en resolver preguntas.'
+        instruction = 'Eres un asistente que ayuda a responder preguntas.'
         if self.multimodal:
             messages = [
                 {
@@ -114,9 +137,8 @@ class Model:
                 "role": "system",
                 "content": [{
                     "type": "text",
-                    "text": "Responde la siguiente pregunta, contesta con únicamente la "\
-                            "respuesta sin palabras adicionales. Utiliza únicamente los "\
-                            f"fragmentos de la normativa siguiente:\n\n{documents_context}"
+                    "text": "Responde la siguiente pregunta. Utiliza únicamente los "\
+                            f"fragmentos de documentos siguientes:\n\n{documents_context}"
                 }]
             },
             {
@@ -133,9 +155,8 @@ class Model:
         new_messages = [
             {
                 "role": "system",
-                "content": "Responde la siguiente pregunta, contesta con únicamente la "\
-                           "respuesta sin palabras adicionales. Utiliza únicamente los "\
-                           f"fragmentos de la normativa siguiente:\n\n{documents_context}"
+                "content": "Responde la siguiente pregunta. Utiliza únicamente los "\
+                           f"fragmentos de documentos siguientes:\n\n{documents_context}"
             },
             {
                 "role": "user",
@@ -153,106 +174,51 @@ class Model:
 
         return docs_str
 
-class LlamaBuilder:
-    """Factory method for Llama classes."""
+class ModelBuilder:
+    """Factory method to create models and its variants."""
 
     @classmethod
-    def build_from_variant(cls, variant:str='') -> Model:
-        """Return an object of the corresponding Llama class depending on version."""
-        main_version = variant.split('-')[0].split('.')[0]
+    def get_from_id(cls, model_id:str) -> Model:
+        """Return an object of the corresponding class depending of the type of model."""
+        if model_id == '':
+            return None
 
-        return getattr(sys.modules[__name__], f'Llama{main_version}')(variant)
+        id_parts = model_id.split('/')
+        full_name = id_parts[-1]
 
-class GemmaBuilder:
-    """Factory method for Gemma classes."""
+        is_gguf = False
+        full_name_parts = full_name.split('-')
+        if full_name_parts[-1].lower() == 'gguf':
+            is_gguf = True
 
-    @classmethod
-    def build_from_variant(cls, variant:str='') -> Model:
-        """Return an object of the corresponding Gemma class depending on version."""
-        version = variant.split('-')[0].replace('.', '_')
-        sub_version = '-'.join(variant.split('-')[1:])
+        name = full_name_parts[0]
+        try:
+            if is_gguf:
+                return None
+            else:
+                return Models[name].value(model_id)
+        except KeyError:
+            return None
 
-        return getattr(sys.modules[__name__], f'Gemma{version}')(sub_version)
-
-class QwenBuilder:
-    """Factory method for Qwen classes."""
-
-    @classmethod
-    def build_from_variant(cls, variant:str='') -> Model:
-        """Return an object of the corresponding Qwen class depending on version."""
-        version = variant.split('-')[0].replace('.', '_')
-        sub_version = '-'.join(variant.split('-')[1:])
-
-        return getattr(sys.modules[__name__], f'Qwen{version}')(sub_version)
-
-class MistralBuilder:
-    """Factory method for Mistral classes."""
-
-    @classmethod
-    def build_from_variant(cls, variant:str='') -> Model:
-        """Return an object of the corresponding Mistral class depending on version."""
-        return Mistral(variant)
-
-class Llama3(Model):
+class Llama(Model):
     """Class to load Meta Llama 3.1 and 3.2 model and its variants."""
 
-    def __init__(self, sub_version:str=''):
+    def __init__(self, model_id:str):
         super().__init__(multimodal=True)
 
-        if sub_version == '':
-            self.model_id = "meta-llama/Llama-3.2-1B"
-        else:
-            self.model_id = f'meta-llama/Llama-{sub_version}'
+        self.model_id = model_id
 
         tokenizer = AutoTokenizer.from_pretrained(self.model_id, legacy=False)
         tokenizer.pad_token_id = tokenizer.eos_token_id
         self.pipeline = transformers.pipeline(
             "text-generation",
             model=self.model_id,
-            model_kwargs={"torch_dtype": torch.bfloat16},
+            torch_dtype=torch.bfloat16,
             tokenizer=tokenizer,
             device_map="auto"
         )
 
-    def query(self, query:str, add_to_history:bool=True) -> str:
-        """Query an answer based on a question."""
-        messages = self.str_to_message(query)
-        response = self.__get_response_from_model(messages)
-
-        if add_to_history:
-            self.messages += messages + self.response_to_message(response)
-
-        return response
-
-    def query_with_documents(self, query:str, documents:list[Document], add_to_history:bool=True):
-        """Query an answer based on a question and some documents passed as context."""
-        messages = self.str_to_message_with_context(query, documents)
-        response = self.__get_response_from_model(messages)
-
-        if add_to_history:
-            self.messages += self.str_to_message(query) + self.response_to_message(response)
-
-        return response
-
-    def query_with_conversation(self, messages:list[dict[str, str]]) -> str:
-        """Query an answer based on a full conversation."""
-        response = self.__get_response_from_model(messages)
-
-        return self.response_to_message(response)
-
-    def query_with_conversation_and_documents(self, messages:list[dict[str, str]],
-                                              documents:list[Document]) -> str:
-        """
-        Query an answer based on a full conversation and some documents passed as context to
-        the last question.
-        """
-        last_query = messages[-1]['content']
-        messages = messages[:-1] + self.str_to_message_with_context(last_query, documents)
-        response = self.__get_response_from_model(messages)
-
-        return self.response_to_message(response)
-
-    def __get_response_from_model(self, messages:list[dict[str, str]]) -> str:
+    def get_response_from_model(self, messages:list[dict[str, str]]) -> str:
         all_messages = self.messages + messages
         output = self.pipeline(all_messages, max_new_tokens=1024)
 
@@ -260,18 +226,14 @@ class Llama3(Model):
 
         return response
 
-class Gemma3(Model):
+class Gemma(Model):
     """Class to load Gemma3 model and its variants."""
 
-    def __init__(self, sub_version:str=''):
-        multimodal = not(sub_version == '1b-it' or sub_version.endswith('-gguf'))
+    def __init__(self, model_id: str):
+        multimodal = not(model_id.endswith('1b-it') or model_id.endswith('-gguf'))
         super().__init__(multimodal=multimodal)
 
-        if sub_version == '':
-            self.model_id = "google/gemma-3-4b-it"
-        else:
-            self.model_id = f"google/gemma-3-{sub_version}"
-
+        self.model_id = model_id
         self.processor = None
         self.tokenizer = None
 
@@ -286,10 +248,6 @@ class Gemma3(Model):
             quantization_config = BitsAndBytesConfig(load_in_8bit=True)
             device_map='auto'
 
-        # Apparently there's a bug with device_map="sequential", Gemma-3-4b and pytorch
-        if self.model_id.endswith('4b-it'):
-            device_map="auto"
-
         if self.multimodal:
             self.model = Gemma3ForConditionalGeneration.from_pretrained(
                 self.model_id, device_map=device_map
@@ -302,58 +260,13 @@ class Gemma3(Model):
             ).eval()
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_id, gguf_file=gguf_file)
 
-    def query(self, query:str, add_to_history:bool=True) -> str:
-        """Query an answer based on a question."""
-        messages = self.str_to_message(query)
-
+    def get_response_from_model(self, messages):
         if self.multimodal:
             response = self.__process_multimodal(messages)
         else:
             response = self.__process_text(messages)
-
-        if add_to_history:
-            self.messages += messages + self.response_to_message(response)
 
         return response
-
-    def query_with_documents(self, query:str, documents:list[Document], add_to_history:bool=True):
-        """Query an answer based on a question and some documents passed as context."""
-        messages = self.str_to_message_with_context(query, documents)
-
-        if self.multimodal:
-            response = self.__process_multimodal(messages)
-        else:
-            response = self.__process_text(messages)
-
-        if add_to_history:
-            self.messages += self.str_to_message(query) + self.response_to_message(response)
-
-        return response
-
-    def query_with_conversation(self, messages:list[dict[str, str]]) -> str:
-        """Query an answer based on a full conversation."""
-        if self.multimodal:
-            response = self.__process_multimodal(messages)
-        else:
-            response = self.__process_text(messages)
-
-        return self.response_to_message(response)
-
-    def query_with_conversation_and_documents(self, messages:list[dict[str, str]],
-                                              documents:list[Document]) -> str:
-        """
-        Query an answer based on a full conversation and some documents passed as context to
-        the last question.
-        """
-        last_query = messages[-1]['content']
-        messages = messages[:-1] + self.str_to_message_with_context(last_query, documents)
-
-        if self.multimodal:
-            response = self.__process_multimodal(messages)
-        else:
-            response = self.__process_text(messages)
-
-        return self.response_to_message(response)
 
     def __process_multimodal(self, messages:list[dict]):
         all_messages = self.messages + messages
@@ -405,11 +318,9 @@ class Gemma3(Model):
 class Qwen3(Model):
     """Class to load Qwen models."""
 
-    def __init__(self, sub_version:str='', thinking:bool=False):
+    def __init__(self, model_id:str, thinking:bool=False):
         super().__init__(multimodal=False)
-        self.thinking = thinking
-
-        self.model_id = "Qwen/Qwen3-0.6B" if sub_version == '' else f"Qwen/Qwen3-{sub_version}"
+        self.model_id = model_id
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_id)
         self.model = AutoModelForCausalLM.from_pretrained(
@@ -418,47 +329,9 @@ class Qwen3(Model):
             device_map='auto',
         )
 
-    def query(self, query:str, add_to_history:bool=True):
-        """Query an answer based on a question."""
-        messages = self.str_to_message(query)
+        self.thinking = thinking
 
-        response = self.__get_response_from_model(messages)
-
-        if add_to_history:
-            self.messages += messages + self.response_to_message(response)
-
-        return response
-
-    def query_with_documents(self, query:str, documents:list[Document], add_to_history:bool=True):
-        """Query an answer based on a question and some documents passed as context."""
-        messages = self.str_to_message_with_context(query, documents)
-
-        response = self.__get_response_from_model(messages)
-
-        if add_to_history:
-            self.messages += self.str_to_message(query) + self.response_to_message(response)
-
-        return response
-
-    def query_with_conversation(self, messages:list[dict[str, str]]) -> str:
-        """Query an answer based on a full conversation."""
-        response = self.__get_response_from_model(messages)
-
-        return self.response_to_message(response)
-
-    def query_with_conversation_and_documents(self, messages:list[dict[str, str]],
-                                              documents:list[Document]) -> str:
-        """
-        Query an answer based on a full conversation and some documents passed as context to
-        the last question.
-        """
-        last_query = messages[-1]['content']
-        messages = messages[:-1] + self.str_to_message_with_context(last_query, documents)
-        response = self.__get_response_from_model(messages)
-
-        return self.response_to_message(response)
-
-    def __get_response_from_model(self, messages:list[dict[str, str]]) -> str:
+    def get_response_from_model(self, messages:list[dict[str, str]]) -> str:
         all_messages = self.messages + messages
         text = self.tokenizer.apply_chat_template(
             all_messages,
@@ -493,65 +366,22 @@ class Qwen3(Model):
 class Mistral(Model):
     """Class to load Mistral AI models."""
 
-    def __init__(self, sub_version:str=''):
+    def __init__(self, model_id:str):
         super().__init__(multimodal=False)
 
-        if sub_version == '':
-            self.model_id = "mistralai/Mistral-7B-Instruct-v0.3"
-        else:
-            self.model_id = f"mistralai/Mistral-{sub_version}"
+        self.model_id = model_id
 
         tokenizer = AutoTokenizer.from_pretrained(self.model_id)
         tokenizer.pad_token_id = tokenizer.eos_token_id
         self.pipeline = transformers.pipeline(
             "text-generation",
             model=self.model_id,
-            model_kwargs={"torch_dtype": torch.bfloat16},
+            torch_dtype=torch.bfloat16,
             tokenizer=tokenizer,
             device_map="auto"
         )
 
-    def query(self, query:str, add_to_history:bool=True):
-        """Query an answer based on a question."""
-        messages = self.str_to_message(query)
-
-        response = self.__get_response_from_model(messages)
-
-        if add_to_history:
-            self.messages += messages + self.response_to_message(response)
-
-        return response
-
-    def query_with_documents(self, query:str, documents:list[Document], add_to_history:bool=True):
-        """Query an answer based on a question and some documents passed as context."""
-        messages = self.str_to_message_with_context(query, documents)
-
-        response = self.__get_response_from_model(messages)
-
-        if add_to_history:
-            self.messages += self.str_to_message(query) + self.response_to_message(response)
-
-        return response
-
-    def query_with_conversation(self, messages:list[dict[str, str]]) -> str:
-        """Query an answer based on a full conversation."""
-        response = self.__get_response_from_model(messages)
-
-        return self.response_to_message(response)
-
-    def query_with_conversation_and_documents(self, messages:list[dict[str, str]],
-                                              documents:list[Document]) -> str:
-        """
-        Query an answer based on a full conversation and some documents passed as context to
-        the last question.
-        """
-        last_query = messages[-1]['content']
-        messages = messages[:-1] + self.str_to_message_with_context(last_query, documents)
-        response = self.__get_response_from_model(messages)
-
-        return self.response_to_message(response)
-
-    def __get_response_from_model(self, messages:list[dict[str, str]]) -> str:
+    def get_response_from_model(self, messages:list[dict[str, str]]) -> str:
         all_messages = self.messages + messages
         output = self.pipeline(all_messages, max_new_tokens=1024)
 
@@ -559,9 +389,9 @@ class Mistral(Model):
 
         return response
 
-class Builders(Enum):
-    """Different types of model builders available."""
-    GEMMA = GemmaBuilder
-    LLAMA = LlamaBuilder
-    QWEN = QwenBuilder
-    MISTRAL = MistralBuilder
+class Models(Enum):
+    """Different types of models that are available."""
+    Qwen3 = Qwen3
+    gemma = Gemma
+    Llama = Llama
+    Mistral = Mistral
