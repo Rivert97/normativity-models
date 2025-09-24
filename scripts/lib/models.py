@@ -2,11 +2,13 @@
 
 from abc import ABC, abstractmethod
 from enum import Enum
+import os
 
 import transformers
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoProcessor
 from transformers import BitsAndBytesConfig, Gemma3ForConditionalGeneration, Gemma3ForCausalLM
 import torch
+from llama_cpp import Llama
 
 from .data import Document
 
@@ -186,21 +188,26 @@ class ModelBuilder:
         id_parts = model_id.split('/')
         full_name = id_parts[-1]
 
-        is_gguf = False
         full_name_parts = full_name.split('-')
-        if full_name_parts[-1].lower() == 'gguf':
-            is_gguf = True
-
         name = full_name_parts[0]
         try:
-            if is_gguf:
-                return None
-            else:
-                return Models[name].value(model_id)
+            return Models[name].value(model_id)
         except KeyError:
             return None
 
-class Llama(Model):
+    @classmethod
+    def get_from_gguf_file(cls, gguf_file:str) -> Model:
+        """Return an object of the corresponding class to use a GGUF model"""
+        if not os.path.exists(gguf_file):
+            return None
+
+        try:
+            return GGUFModel(gguf_file)
+        except Exception as e:
+            print(e)
+            return None
+
+class Llama3(Model):
     """Class to load Meta Llama 3.1 and 3.2 model and its variants."""
 
     def __init__(self, model_id:str):
@@ -389,9 +396,39 @@ class Mistral(Model):
 
         return response
 
+class GGUFModel(Model):
+    """Class to load models with GGUF format."""
+
+    def __init__(self, ggu_file:str):
+        super().__init__(multimodal=False)
+
+        self.model = Llama(
+            model_path=ggu_file,
+            embedding=False,
+            n_gpu_layers=-1,
+            n_ctx=8192,
+            verbose=False,
+        )
+
+    def __del__(self):
+        self.model.close()
+
+    def get_response_from_model(self, messages):
+        all_messages = self.messages + messages
+
+        response = self.model.create_chat_completion(
+            messages=all_messages,
+            max_tokens=1024
+        )
+
+        print("Tokens input:", response['usage']['prompt_tokens'])
+        print("Tokens output:", response['usage']['completion_tokens'])
+
+        return response['choices'][0]['message']['content']
+
 class Models(Enum):
     """Different types of models that are available."""
     Qwen3 = Qwen3
     gemma = Gemma
-    Llama = Llama
+    Llama = Llama3
     Mistral = Mistral
