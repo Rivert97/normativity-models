@@ -26,7 +26,7 @@ DATASET_NAME = 'Rivert97/ug-normativity'
 RESULTS_DIR = './results_rag'
 RESPONSES_DIR = './responses'
 START = 0
-END = 2
+END = None
 
 # Other variables
 k = 5
