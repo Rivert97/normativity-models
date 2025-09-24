@@ -399,8 +399,9 @@ class Mistral(Model):
 class GGUFModel(Model):
     """Class to load models with GGUF format."""
 
-    def __init__(self, ggu_file:str):
+    def __init__(self, ggu_file:str, thinking:bool=False):
         super().__init__(multimodal=False)
+        self.thinking = thinking
 
         self.model = Llama(
             model_path=ggu_file,
@@ -410,21 +411,29 @@ class GGUFModel(Model):
             verbose=False,
         )
 
-    def __del__(self):
-        self.model.close()
-
     def get_response_from_model(self, messages):
         all_messages = self.messages + messages
+        if not self.thinking:
+            all_messages = [
+                {
+                    'role': m['role'],
+                    'content': f"/no_think {m['content']}"
+                } for m in all_messages
+            ]
 
         response = self.model.create_chat_completion(
             messages=all_messages,
             max_tokens=1024
         )
+        response_str = response['choices'][0]['message']['content']
+        index = response_str.find('</think>\n\n')
+        if index >= 0:
+            response_str = response_str[index + 10:]
 
         print("Tokens input:", response['usage']['prompt_tokens'])
         print("Tokens output:", response['usage']['completion_tokens'])
 
-        return response['choices'][0]['message']['content']
+        return response_str
 
 class Models(Enum):
     """Different types of models that are available."""
