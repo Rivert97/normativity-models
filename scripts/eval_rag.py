@@ -1,6 +1,5 @@
 import os
 import glob
-import json
 import subprocess
 
 import dotenv
@@ -13,11 +12,12 @@ from rouge_score import rouge_scorer, scoring
 from datasets import load_dataset
 
 from .lib.data import Document
-from .lib.models import Builders
+from .lib.models import ModelBuilder
 
 # Gobal variables
 MODELS = [
-    {'full_id': 'Qwen/Qwen3-Embedding-8B', 'id': 'QWEN', 'variant': '3-0.6B'},
+    {'embeddings_id': 'Qwen/Qwen3-Embedding-8B', 'model_id': 'Qwen/Qwen3-0.6B'},
+    {'embeddings_id': 'Qwen/Qwen3-Embedding-8B', 'model_gguf': '/home/rgarcia/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B-GGUF/snapshots/23749fefcc72300e3a2ad315e1317431b06b590a/Qwen3-0.6B-Q8_0.gguf'},
 ]
 DATA_PATH = './data'
 DATA_EMBEDDINGS_PATH = f'./data_embeddings'
@@ -26,7 +26,7 @@ DATASET_NAME = 'Rivert97/ug-normativity'
 RESULTS_DIR = './results_rag'
 RESPONSES_DIR = './responses'
 START = 0
-END = None
+END = 2
 
 # Other variables
 k = 5
@@ -131,7 +131,7 @@ def calculate_rouge(responses, answers):
 
     return {metric: result[metric].mid.fmeasure for metric in result}
 
-def calculate_rouge_by_file(responses, answers, model_opts):
+def calculate_rouge_by_file(responses, answers, model_opts, model_name):
     scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"], use_stemmer=True)
     aggregator = scoring.BootstrapAggregator()
 
@@ -157,7 +157,7 @@ def calculate_rouge_by_file(responses, answers, model_opts):
         metrics['rougeL'][f_idx] = score['rougeL']
         metrics['rougeLsum'][f_idx] = score['rougeLsum']
 
-    model_identifier = f"{model_opts['full_id']}_{model_opts['id']}-{model_opts['variant']}"
+    model_identifier = f"{model_opts['embeddings_id']}_{model_name}"
     return pd.DataFrame({
             f'{model_identifier} rouge1': metrics['rouge1'],
             f'{model_identifier} rouge2': metrics['rouge2'],
@@ -189,14 +189,30 @@ def update_csv_data(filename, new_data, axis=0):
     updated_df.to_csv(filename, sep=',')
 
 for model_opts in MODELS:
-    print(f"Procesando {model_opts['full_id']} with {model_opts['id']}-{model_opts['variant']}")
+    if 'model_id' in model_opts:
+        print(f"Procesando {model_opts['embeddings_id']} with {model_opts['model_id']}")
+        model_name = model_opts['model_id']
+    elif 'model_gguf' in model_opts:
+        print(f"Procesando {model_opts['embeddings_id']} with {model_opts['model_gguf'].split('/')[-1]}")
+        model_name = os.path.splitext(os.path.basename(model_opts['model_gguf']))[0]
+    else:
+        print("Invalid model")
+        continue
 
     dataset = load_dataset(DATASET_NAME)['train']
-    data, embeddings, questions_embeddings = load_csv_data(os.path.join(DATA_EMBEDDINGS_PATH, model_opts['full_id']), os.path.join(DATASET_EMBEDDINGS_PATH, model_opts['full_id']))
+    data, embeddings, questions_embeddings = load_csv_data(os.path.join(DATA_EMBEDDINGS_PATH, model_opts['embeddings_id']), os.path.join(DATASET_EMBEDDINGS_PATH, model_opts['embeddings_id']))
     questions = find_questions_related_chunks(dataset, questions_embeddings, data, embeddings)
     top_k_info = get_top_k_scores_info(questions, data, embeddings)
-    model = Builders[model_opts['id']].value.build_from_variant(model_opts['variant'])
-    responses_dir = os.path.join(RESPONSES_DIR, f'{model_opts['full_id']}_{model_opts['id']}-{model_opts['variant']}')
+
+    if 'model_id' in model_opts:
+        model = ModelBuilder.get_from_id(model_opts['model_id'])
+    elif 'model_gguf' in model_opts:
+        model = ModelBuilder.get_from_gguf_file(model_opts['model_gguf'])
+    else:
+        print("Invalid model")
+        continue
+
+    responses_dir = os.path.join(RESPONSES_DIR, f'{model_opts['embeddings_id']}_{model_name}')
     os.makedirs(responses_dir, exist_ok=True)
 
     print(subprocess.run(['nvidia-smi']))
@@ -283,11 +299,11 @@ for model_opts in MODELS:
         [answ['text'] for _, answ in answers.iterrows()]
     )
 
-    rouge = pd.DataFrame(rouge_score, index=[f"{model_opts['full_id']}_{model_opts['id']}-{model_opts['variant']}"])
+    rouge = pd.DataFrame(rouge_score, index=[f"{model_opts['embeddings_id']}_{model_name}"])
     rouge_filename = os.path.join(RESULTS_DIR, f'rouge_top_{k}.csv')
     update_csv_data(rouge_filename, rouge)
 
-    rouge_by_file= calculate_rouge_by_file(responses, answers, model_opts)
+    rouge_by_file= calculate_rouge_by_file(responses, answers, model_opts, model_name)
     rouge_by_file_filename = os.path.join(RESULTS_DIR, f'rouge_by_file_top_{k}.csv')
     update_csv_data(rouge_by_file_filename, rouge_by_file, axis=1)
 
