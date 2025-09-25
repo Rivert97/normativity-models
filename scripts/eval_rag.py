@@ -16,7 +16,7 @@ from .lib.models import ModelBuilder
 
 # Gobal variables
 MODELS = [
-    {'embeddings_id': 'Qwen/Qwen3-Embedding-8B', 'model_id': 'Qwen/Qwen3-0.6B'},
+    #{'embeddings_id': 'Qwen/Qwen3-Embedding-8B', 'model_id': 'Qwen/Qwen3-0.6B'},
     {'embeddings_id': 'Qwen/Qwen3-Embedding-8B', 'model_gguf': '/home/rgarcia/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B-GGUF/snapshots/23749fefcc72300e3a2ad315e1317431b06b590a/Qwen3-0.6B-Q8_0.gguf'},
 ]
 DATA_PATH = './data'
@@ -26,7 +26,7 @@ DATASET_NAME = 'Rivert97/ug-normativity'
 RESULTS_DIR = './results_rag'
 RESPONSES_DIR = './responses'
 START = 0
-END = None
+END = 1
 
 # Other variables
 k = 5
@@ -120,22 +120,22 @@ def get_top_k_scores_info(questions, data, embeddings):
 
     return top_k_info
 
-def calculate_rouge(responses, answers):
+def calculate_rouge(predicted, reference):
     scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"], use_stemmer=True)
     aggregator = scoring.BootstrapAggregator()
 
-    for pred, ref in zip(responses, answers):
+    for pred, ref in zip(predicted, reference):
         score = scorer.score(ref, pred)
         aggregator.add_scores(score)
     result = aggregator.aggregate()
 
     return {metric: result[metric].mid.fmeasure for metric in result}
 
-def calculate_rouge_by_file(responses, answers, model_opts, model_name):
+def calculate_rouge_by_file(predicted, reference, model_opts, model_name):
     scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL", "rougeLsum"], use_stemmer=True)
     aggregator = scoring.BootstrapAggregator()
 
-    files = responses['file'].unique()
+    files = predicted['file'].unique()
     metrics = {
         'rouge1': np.zeros((len(files),), dtype=np.float32),
         'rouge2': np.zeros((len(files),), dtype=np.float32),
@@ -143,10 +143,10 @@ def calculate_rouge_by_file(responses, answers, model_opts, model_name):
         'rougeLsum': np.zeros((len(files),), dtype=np.float32),
     }
     for f_idx, f in enumerate(files):
-        file_responses = responses[responses['file'] == f]
-        file_answers = answers[answers['file'] == f]
+        file_predicted = predicted[predicted['file'] == f]
+        file_reference = reference[reference['file'] == f]
 
-        for pred, ref in zip(file_responses['text'], file_answers['text']):
+        for pred, ref in zip(file_predicted['text'], file_reference['text']):
             single_score = scorer.score(ref, pred)
             aggregator.add_scores(single_score)
         result = aggregator.aggregate()
@@ -218,12 +218,12 @@ for model_opts in MODELS:
     print(subprocess.run(['nvidia-smi']))
 
     if os.path.exists(os.path.join(responses_dir, 'predicted.csv')):
-        answers = pd.read_csv(os.path.join(responses_dir, 'reference.csv'), sep=',', index_col=0)
-        responses = pd.read_csv(os.path.join(responses_dir, 'predicted.csv'), sep=',', index_col=0)
+        reference = pd.read_csv(os.path.join(responses_dir, 'reference.csv'), sep=',', index_col=0)
+        predicted = pd.read_csv(os.path.join(responses_dir, 'predicted.csv'), sep=',', index_col=0)
         contexts = pd.read_csv(os.path.join(responses_dir, 'context.csv'), sep=',', index_col=0)
     else:
-        answers = pd.DataFrame(columns=['file', 'text'])
-        responses = pd.DataFrame(columns=['file', 'text'])
+        reference = pd.DataFrame(columns=['file', 'text'])
+        predicted = pd.DataFrame(columns=['file', 'text'])
         contexts = pd.DataFrame(columns=['file', 'context'])
     q_total = len(questions)
     for q_idx, question in enumerate(questions):
@@ -270,8 +270,8 @@ for model_opts in MODELS:
             'text': response
         }
         df_res = pd.DataFrame(res, index=[q_idx])
-        responses = pd.concat([responses, df_res])
-        responses.to_csv(os.path.join(responses_dir, 'predicted.csv'), sep=',')
+        predicted = pd.concat([predicted, df_res])
+        predicted.to_csv(os.path.join(predicted, 'predicted.csv'), sep=',')
 
         # Appending answer
         answ = {
@@ -279,8 +279,8 @@ for model_opts in MODELS:
             'text': question['question']['answers']['text'][0],
         }
         df_answ = pd.DataFrame(answ, index=[q_idx])
-        answers = pd.concat([answers, df_answ])
-        answers.to_csv(os.path.join(responses_dir, 'reference.csv'), sep=',')
+        reference = pd.concat([reference, df_answ])
+        reference.to_csv(os.path.join(responses_dir, 'reference.csv'), sep=',')
 
         # Appending used context
         cntx = {
@@ -295,15 +295,15 @@ for model_opts in MODELS:
             print(subprocess.run(['nvidia-smi']))
 
     rouge_score = calculate_rouge(
-        [res['text'] for _, res in responses.iterrows()],
-        [answ['text'] for _, answ in answers.iterrows()]
+        [res['text'] for _, res in predicted.iterrows()],
+        [answ['text'] for _, answ in reference.iterrows()]
     )
 
     rouge = pd.DataFrame(rouge_score, index=[f"{model_opts['embeddings_id']}_{model_name}"])
     rouge_filename = os.path.join(RESULTS_DIR, f'rouge_top_{k}.csv')
     update_csv_data(rouge_filename, rouge)
 
-    rouge_by_file= calculate_rouge_by_file(responses, answers, model_opts, model_name)
+    rouge_by_file= calculate_rouge_by_file(predicted, reference, model_opts, model_name)
     rouge_by_file_filename = os.path.join(RESULTS_DIR, f'rouge_by_file_top_{k}.csv')
     update_csv_data(rouge_by_file_filename, rouge_by_file, axis=1)
 
