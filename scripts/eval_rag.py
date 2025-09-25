@@ -16,7 +16,7 @@ from .lib.models import ModelBuilder
 
 # Gobal variables
 MODELS = [
-    #{'embeddings_id': 'Qwen/Qwen3-Embedding-8B', 'model_id': 'Qwen/Qwen3-0.6B'},
+    {'embeddings_id': 'Qwen/Qwen3-Embedding-8B', 'model_id': 'Qwen/Qwen3-0.6B'},
     {'embeddings_id': 'Qwen/Qwen3-Embedding-8B', 'model_gguf': '/home/rgarcia/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B-GGUF/snapshots/23749fefcc72300e3a2ad315e1317431b06b590a/Qwen3-0.6B-Q8_0.gguf'},
 ]
 DATA_PATH = './data'
@@ -26,7 +26,7 @@ DATASET_NAME = 'Rivert97/ug-normativity'
 RESULTS_DIR = './results_rag'
 RESPONSES_DIR = './responses'
 START = 0
-END = 1
+END = None
 
 # Other variables
 k = 5
@@ -266,15 +266,17 @@ for model_opts in MODELS:
 
         # Appending model response
         res = {
+            'id': question['question']['id'],
             'file': question['question']['title'],
             'text': response
         }
         df_res = pd.DataFrame(res, index=[q_idx])
         predicted = pd.concat([predicted, df_res])
-        predicted.to_csv(os.path.join(predicted, 'predicted.csv'), sep=',')
+        predicted.to_csv(os.path.join(responses_dir, 'predicted.csv'), sep=',')
 
         # Appending answer
         answ = {
+            'id': question['question']['id'],
             'file': question['question']['title'],
             'text': question['question']['answers']['text'][0],
         }
@@ -284,6 +286,7 @@ for model_opts in MODELS:
 
         # Appending used context
         cntx = {
+            'id': question['question']['id'],
             'file': question['question']['title'],
             'context': '|'.join([doc.metadata['document_name'] + ';' + doc.metadata['title'] for doc in documents])
         }
