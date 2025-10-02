@@ -396,6 +396,39 @@ class Mistral(Model):
 
         return response
 
+class GPT(Model):
+    """Class to load GPT-OSS models."""
+
+    def __init__(self, model_id:str):
+        super().__init__(multimodal=False)
+
+        self.tokenizer = AutoTokenizer.from_pretrained(model_id)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            torch_dtype="auto",
+            device_map="auto"
+        )
+
+    def get_response_from_model(self, messages:list[dict[str, str]]) -> str:
+        all_messages = self.messages + messages
+
+        inputs = self.tokenizer.apply_chat_template(
+            all_messages,
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_dict=True,
+        ).to(self.model.device)
+
+        outputs = self.model.generate(
+            **inputs,
+            max_new_tokens=1024,
+            temperature=0.7
+        )
+
+        content = self.tokenizer.decode(outputs[0])
+
+        return content
+
 class GGUFModel(Model):
     """Class to load models with GGUF format."""
 
@@ -441,3 +474,4 @@ class Models(Enum):
     gemma = Gemma
     Llama = Llama3
     Mistral = Mistral
+    gpt = GPT

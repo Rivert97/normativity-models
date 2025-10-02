@@ -199,6 +199,10 @@ for model_opts in MODELS:
         print("Invalid model")
         continue
 
+    if model is None:
+        print("Error while loading model")
+        continue
+
     dataset = load_dataset(DATASET_NAME)['train']
     data, embeddings, questions_embeddings = load_csv_data(os.path.join(DATA_EMBEDDINGS_PATH, model_opts['embeddings_id']), os.path.join(DATASET_EMBEDDINGS_PATH, model_opts['embeddings_id']))
     questions = find_questions_related_chunks(dataset, questions_embeddings, data, embeddings)
