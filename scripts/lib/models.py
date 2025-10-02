@@ -31,7 +31,7 @@ class Model(ABC):
         response = self.get_response_from_model(messages)
 
         if add_to_history:
-            self.messages += messages + self.response_to_message(response)
+            self.messages += messages + self.response_to_message(response['message'])
 
         return response
 
@@ -42,7 +42,8 @@ class Model(ABC):
         response = self.get_response_from_model(messages)
 
         if add_to_history:
-            self.messages += self.str_to_message(query) + self.response_to_message(response)
+            self.messages += self.str_to_message(query)
+            self.messages += self.response_to_message(response['message'])
 
         return response
 
@@ -50,7 +51,7 @@ class Model(ABC):
         """Query an answer based on a full conversation."""
         response = self.get_response_from_model(messages)
 
-        return self.response_to_message(response)
+        return self.response_to_message(response['message'])
 
     def query_with_conversation_and_documents(self, messages:list[dict[str, str]],
                                               documents:list[Document]) -> str:
@@ -62,7 +63,7 @@ class Model(ABC):
         messages = messages[:-1] + self.str_to_message_with_context(last_query, documents)
         response = self.get_response_from_model(messages)
 
-        return self.response_to_message(response)
+        return self.response_to_message(response['message'])
 
     def str_to_message(self, query:str):
         """Add a new message to be sent to the model."""
@@ -180,7 +181,7 @@ class ModelBuilder:
     """Factory method to create models and its variants."""
 
     @classmethod
-    def get_from_id(cls, model_id:str) -> Model:
+    def get_from_id(cls, model_id:str, **model_args) -> Model:
         """Return an object of the corresponding class depending of the type of model."""
         if model_id == '':
             return None
@@ -191,18 +192,19 @@ class ModelBuilder:
         full_name_parts = full_name.split('-')
         name = full_name_parts[0]
         try:
-            return Models[name].value(model_id)
+            return Models[name].value(model_id, **model_args)
         except KeyError:
             return None
 
     @classmethod
-    def get_from_gguf_file(cls, gguf_file:str) -> Model:
+    def get_from_gguf_file(cls, gguf_file:str, **model_args) -> Model:
         """Return an object of the corresponding class to use a GGUF model"""
         if not os.path.exists(gguf_file):
+            print(f"Model file '{gguf_file}' not found")
             return None
 
         try:
-            return GGUFModel(gguf_file)
+            return GGUFModel(gguf_file, **model_args)
         except Exception as e:
             print(e)
             return None
@@ -225,11 +227,14 @@ class Llama3(Model):
             device_map="auto"
         )
 
-    def get_response_from_model(self, messages:list[dict[str, str]]) -> str:
+    def get_response_from_model(self, messages:list[dict[str, str]]) -> dict[str, str]:
         all_messages = self.messages + messages
         output = self.pipeline(all_messages, max_new_tokens=1024)
 
-        response = output[0].get('generated_text')[-1].get('content', '')
+        response = {
+            'message': output[0].get('generated_text')[-1].get('content', ''),
+            'reasoning': '',
+        }
 
         return response
 
@@ -288,9 +293,12 @@ class Gemma(Model):
             generation = self.model.generate(**inputs, max_new_tokens=1024, do_sample=False)
             generation = generation[0][input_len:]
 
-        decoded = self.processor.decode(generation, skip_special_tokens=True)
+        response = {
+            'message': self.processor.decode(generation, skip_special_tokens=True),
+            'reasoning': '',
+        }
 
-        return decoded
+        return response
 
     def __process_text(self, messages:list[dict]):
         all_messages = self.messages + messages
@@ -318,7 +326,11 @@ class Gemma(Model):
         sot_pos = sot + 21 if sot > -1 else 0
         eot = response.find('<end_of_turn>', sot_pos)
         eot_pos = eot if eot > -1 else None
-        response = response[sot_pos:eot_pos]
+
+        response = {
+            'message': response[sot_pos:eot_pos],
+            'reasoning': '',
+        }
 
         return response
 
@@ -365,10 +377,18 @@ class Qwen3(Model):
 
         #thinking_content =
         #    self.tokenizer.decode(output_ids[:index], skip_special_tokens=True).strip("\n")
-        print("Tokens output:", len(output_ids[index:]))
-        content = self.tokenizer.decode(output_ids[index:], skip_special_tokens=True).strip("\n")
+        print("Tokens output:", len(output_ids))
+        message = self.tokenizer.decode(output_ids[index:], skip_special_tokens=True).strip("\n")
+        if index > 0:
+            reasoning = self.tokenizer.decode(output_ids[1:index-1], skip_special_tokens=True).strip("\n")
+        else:
+            reasoning = ''
+        response = {
+            'message': message,
+            'reasoning': reasoning,
+        }
 
-        return content
+        return response
 
 class Mistral(Model):
     """Class to load Mistral AI models."""
@@ -392,7 +412,10 @@ class Mistral(Model):
         all_messages = self.messages + messages
         output = self.pipeline(all_messages, max_new_tokens=1024)
 
-        response = output[0].get('generated_text')[-1].get('content', '')
+        response = {
+            'message': output[0].get('generated_text')[-1].get('content', ''),
+            'reasoning': '',
+        }
 
         return response
 
@@ -425,9 +448,12 @@ class GPT(Model):
             temperature=0.7
         )
 
-        content = self.tokenizer.decode(outputs[0])
+        response = {
+            'message': self.tokenizer.decode(outputs[0]),
+            'reasoning': '',
+        }
 
-        return content
+        return response
 
 class GGUFModel(Model):
     """Class to load models with GGUF format."""
@@ -454,19 +480,43 @@ class GGUFModel(Model):
                 } for m in all_messages
             ]
 
-        response = self.model.create_chat_completion(
+        res = self.model.create_chat_completion(
             messages=all_messages,
             max_tokens=1024
         )
-        response_str = response['choices'][0]['message']['content']
-        index = response_str.find('</think>\n\n')
-        if index >= 0:
-            response_str = response_str[index + 10:]
+        response_str, reasoning = self.__split_reasoning_content(
+            res['choices'][0]['message']['content']
+        )
 
-        print("Tokens input:", response['usage']['prompt_tokens'])
-        print("Tokens output:", response['usage']['completion_tokens'])
+        print("Tokens input:", res['usage']['prompt_tokens'])
+        print("Tokens output:", res['usage']['completion_tokens'])
 
-        return response_str
+        response = {
+            'message': response_str,
+            'reasoning': reasoning
+        }
+
+        return response
+
+    def __split_reasoning_content(self, model_out:str):
+        reasoning = None
+        response = model_out
+
+        index = response.find('</think>')
+        if index > 0:
+            reasoning = response[7:index].strip()
+            response = response[index + 9:].strip()
+
+        index = response.find('<|channel|>final<|message|>')
+        if index > 0:
+            reasoning = response[31:index-25]
+            response = response[index+27:]
+
+        index = response.find("'text': '")
+        if index > 0:
+            response = response[index+9:].rstrip("']}")
+
+        return response, reasoning
 
 class Models(Enum):
     """Different types of models that are available."""

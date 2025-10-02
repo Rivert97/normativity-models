@@ -17,7 +17,7 @@ from .lib.models import ModelBuilder
 # Gobal variables
 MODELS = [
     {'embeddings_id': 'Qwen/Qwen3-Embedding-8B', 'model_id': 'Qwen/Qwen3-0.6B'},
-    {'embeddings_id': 'Qwen/Qwen3-Embedding-8B', 'model_gguf': '/home/rgarcia/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B-GGUF/snapshots/23749fefcc72300e3a2ad315e1317431b06b590a/Qwen3-0.6B-Q8_0.gguf'},
+    {'embeddings_id': 'Qwen/Qwen3-Embedding-8B', 'model_gguf': '/home/rgarcia/tesis/00_src/run/models/hub/models--Qwen--Qwen3-0.6B-GGUF/snapshots/23749fefcc72300e3a2ad315e1317431b06b590a/Qwen3-0.6B-Q8_0.gguf'},
 ]
 DATA_PATH = './data'
 DATA_EMBEDDINGS_PATH = f'./data_embeddings'
@@ -27,6 +27,7 @@ RESULTS_DIR = './results_rag'
 RESPONSES_DIR = './responses'
 START = 0
 END = None
+THINKING = False
 
 # Other variables
 k = 5
@@ -199,21 +200,21 @@ for model_opts in MODELS:
         print("Invalid model")
         continue
 
-    if model is None:
-        print("Error while loading model")
-        continue
-
     dataset = load_dataset(DATASET_NAME)['train']
     data, embeddings, questions_embeddings = load_csv_data(os.path.join(DATA_EMBEDDINGS_PATH, model_opts['embeddings_id']), os.path.join(DATASET_EMBEDDINGS_PATH, model_opts['embeddings_id']))
     questions = find_questions_related_chunks(dataset, questions_embeddings, data, embeddings)
     top_k_info = get_top_k_scores_info(questions, data, embeddings)
 
     if 'model_id' in model_opts:
-        model = ModelBuilder.get_from_id(model_opts['model_id'])
+        model = ModelBuilder.get_from_id(model_opts['model_id'], thinking=THINKING)
     elif 'model_gguf' in model_opts:
-        model = ModelBuilder.get_from_gguf_file(model_opts['model_gguf'])
+        model = ModelBuilder.get_from_gguf_file(model_opts['model_gguf'], thinking=THINKING)
     else:
         print("Invalid model")
+        continue
+
+    if model is None:
+        print("Error while loading model")
         continue
 
     responses_dir = os.path.join(RESPONSES_DIR, f'{model_opts['embeddings_id']}_{model_name}')
@@ -266,13 +267,15 @@ for model_opts in MODELS:
         if not response:
             continue
 
-        print("Response:", response)
+        print("Reasoning:", response.get('reasoning', ''))
+        print("Response:", response['message'])
 
         # Appending model response
         res = {
             'id': question['question']['id'],
             'file': question['question']['title'],
-            'text': response
+            'text': response['message'],
+            'reasoning': response.get('reasoning', ''),
         }
         df_res = pd.DataFrame(res, index=[q_idx])
         predicted = pd.concat([predicted, df_res])
