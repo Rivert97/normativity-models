@@ -19,8 +19,12 @@ torch.backends.cuda.enable_flash_sdp(False)
 class Model(ABC):
     """Base class for all the models."""
 
-    def __init__(self, multimodal:bool=False):
+    def __init__(self, multimodal:bool=False, system_prompt:str=None):
         self.multimodal = multimodal
+        if system_prompt is None:
+            self.system_prompt = 'Eres un asistente que ayuda a responder preguntas.'
+        else:
+            self.system_prompt = system_prompt
 
         self.messages = self.__get_init_messages()
 
@@ -98,19 +102,18 @@ class Model(ABC):
         pass
 
     def __get_init_messages(self) -> list[dict[str:str|dict]]:
-        instruction = 'Eres un asistente que ayuda a responder preguntas.'
         if self.multimodal:
             messages = [
                 {
                     "role": "system",
-                    "content": [{"type": "text", "text": instruction}],
+                    "content": [{"type": "text", "text": self.system_prompt}],
                 },
             ]
         else:
             messages = [
                 {
                     "role": "system",
-                    "content": instruction,
+                    "content": self.system_prompt,
                 },
             ]
 
@@ -212,8 +215,8 @@ class ModelBuilder:
 class Llama3(Model):
     """Class to load Meta Llama 3.1 and 3.2 model and its variants."""
 
-    def __init__(self, model_id:str):
-        super().__init__(multimodal=True)
+    def __init__(self, model_id:str, system_prompt:str=None):
+        super().__init__(multimodal=True, system_prompt=system_prompt)
 
         self.model_id = model_id
 
@@ -241,9 +244,9 @@ class Llama3(Model):
 class Gemma(Model):
     """Class to load Gemma3 model and its variants."""
 
-    def __init__(self, model_id: str):
+    def __init__(self, model_id: str, system_prompt:str=None):
         multimodal = not(model_id.endswith('1b-it') or model_id.endswith('-gguf'))
-        super().__init__(multimodal=multimodal)
+        super().__init__(multimodal=multimodal, system_prompt=system_prompt)
 
         self.model_id = model_id
         self.processor = None
@@ -337,8 +340,8 @@ class Gemma(Model):
 class Qwen3(Model):
     """Class to load Qwen models."""
 
-    def __init__(self, model_id:str, thinking:bool=False):
-        super().__init__(multimodal=False)
+    def __init__(self, model_id:str, thinking:bool=False, system_prompt:str=None):
+        super().__init__(multimodal=False, system_prompt=system_prompt)
         self.model_id = model_id
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_id)
@@ -393,8 +396,8 @@ class Qwen3(Model):
 class Mistral(Model):
     """Class to load Mistral AI models."""
 
-    def __init__(self, model_id:str):
-        super().__init__(multimodal=False)
+    def __init__(self, model_id:str, system_prompt:str=None):
+        super().__init__(multimodal=False, system_prompt=system_prompt)
 
         self.model_id = model_id
 
@@ -422,8 +425,8 @@ class Mistral(Model):
 class GPT(Model):
     """Class to load GPT-OSS models."""
 
-    def __init__(self, model_id:str):
-        super().__init__(multimodal=False)
+    def __init__(self, model_id:str, system_prompt:str=None):
+        super().__init__(multimodal=False, system_prompt=system_prompt)
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_id)
         self.model = AutoModelForCausalLM.from_pretrained(
@@ -458,8 +461,8 @@ class GPT(Model):
 class GGUFModel(Model):
     """Class to load models with GGUF format."""
 
-    def __init__(self, ggu_file:str, thinking:bool=False):
-        super().__init__(multimodal=False)
+    def __init__(self, ggu_file:str, thinking:bool=False, system_prompt:str=None):
+        super().__init__(multimodal=False, system_prompt=system_prompt)
         self.thinking = thinking
 
         self.model = Llama(
@@ -509,7 +512,7 @@ class GGUFModel(Model):
 
         index = response.find('<|channel|>final<|message|>')
         if index > 0:
-            reasoning = response[31:index-25]
+            reasoning = response[30:index-25]
             response = response[index+27:]
 
         index = response.find("'text': '")

@@ -28,6 +28,7 @@ RESPONSES_DIR = './responses'
 START = 0
 END = None
 THINKING = False
+SYSTEM_PROMPT_FILE = './prompts/system.txt'
 
 # Other variables
 k = 5
@@ -189,6 +190,11 @@ def update_csv_data(filename, new_data, axis=0):
 
     updated_df.to_csv(filename, sep=',')
 
+system_prompt = None
+if os.path.exists(SYSTEM_PROMPT_FILE):
+    with open(SYSTEM_PROMPT_FILE, 'r', encoding='utf-8') as f:
+        system_prompt = f.read()
+
 for model_opts in MODELS:
     if 'model_id' in model_opts:
         print(f"Procesando {model_opts['embeddings_id']} with {model_opts['model_id']}")
@@ -206,9 +212,9 @@ for model_opts in MODELS:
     top_k_info = get_top_k_scores_info(questions, data, embeddings)
 
     if 'model_id' in model_opts:
-        model = ModelBuilder.get_from_id(model_opts['model_id'], thinking=THINKING)
+        model = ModelBuilder.get_from_id(model_opts['model_id'], thinking=THINKING, system_prompt=system_prompt)
     elif 'model_gguf' in model_opts:
-        model = ModelBuilder.get_from_gguf_file(model_opts['model_gguf'], thinking=THINKING)
+        model = ModelBuilder.get_from_gguf_file(model_opts['model_gguf'], thinking=THINKING, system_prompt=system_prompt)
     else:
         print("Invalid model")
         continue
