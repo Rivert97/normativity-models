@@ -194,6 +194,8 @@ system_prompt = None
 if os.path.exists(SYSTEM_PROMPT_FILE):
     with open(SYSTEM_PROMPT_FILE, 'r', encoding='utf-8') as f:
         system_prompt = f.read()
+else:
+    print("System prompt file not found")
 
 for model_opts in MODELS:
     if 'model_id' in model_opts:

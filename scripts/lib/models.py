@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 import os
+import json
 
 import transformers
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoProcessor
@@ -136,49 +137,42 @@ class Model(ABC):
         return new_message
 
     def __get_multimodal_message_with_context(self, query:str, documents:list[Document]):
-        documents_context = self.__format_documents(documents)
+        documents_context = self.__format_documents_json(documents)
 
         new_messages = [
             {
-                "role": "system",
-                "content": [{
-                    "type": "text",
-                    "text": "Responde la siguiente pregunta. Utiliza únicamente los "\
-                            f"fragmentos de documentos siguientes:\n\n{documents_context}"
-                }]
-            },
-            {
                 "role": "user",
-                "content": [{"type": "text", "text": query}]
+                "content": [{"type": "text", "text": f"<pregunta>{query}</pregunta>\n\n"\
+                             f"<contexto>{documents_context}</contexto>"}]
             }
         ]
 
         return new_messages
 
     def __get_text_message_with_context(self, query:str, documents:list[Document]):
-        documents_context = self.__format_documents(documents)
+        documents_context = self.__format_documents_json(documents)
 
         new_messages = [
             {
-                "role": "system",
-                "content": "Responde la siguiente pregunta. Utiliza únicamente los "\
-                           f"fragmentos de documentos siguientes:\n\n{documents_context}"
-            },
-            {
                 "role": "user",
-                "content": query
+                "content": f"<pregunta>{query}<pregunta>\n\n"\
+                            f"<contexto{documents_context}</contexto>",
             }
         ]
 
         return new_messages
 
-    def __format_documents(self, documents:list[Document]) -> str:
-        docs_str = ''
+    def __format_documents_json(self, documents:list[Document]) -> list[dict[str,str]]:
+        docs = []
         for doc in documents:
-            docs_str += f"{doc.get_reference()}:\n\n{doc.get_metadata()['title']}\n\n"\
-                        f"{doc.get_content()}\n\n"
+            d = {
+                "documento": doc.get_metadata()['document_name'],
+                "nombre": doc.get_metadata()['title'],
+                "contenido": doc.get_content()
+            }
+            docs.append(d)
 
-        return docs_str
+        return json.dumps(docs)
 
 class ModelBuilder:
     """Factory method to create models and its variants."""
