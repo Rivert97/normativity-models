@@ -479,7 +479,7 @@ class GGUFModel(Model):
 
         res = self.model.create_chat_completion(
             messages=all_messages,
-            max_tokens=1024
+            max_tokens=2048
         )
         response_str, reasoning = self.__split_reasoning_content(
             res['choices'][0]['message']['content']
