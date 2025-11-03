@@ -1,5 +1,7 @@
 import logging
 import sys
+import dotenv
+dotenv.load_dotenv()
 
 from datasets import Dataset, load_dataset
 from peft import LoraConfig, TaskType
@@ -40,8 +42,8 @@ model.add_adapter(peft_config)
 # 3. Load a dataset to finetune on
 dataset = load_dataset(DATASET_NAME, split="train")
 dataset_dict = dataset.train_test_split(test_size=0.2, seed=12)
-train_dataset: Dataset = dataset_dict["train"]
-eval_dataset: Dataset = dataset_dict["test"]
+train_dataset: Dataset = Dataset.from_dict({"question": dataset_dict["train"]["question"], "answer": [a['text'][0] for a in dataset_dict["train"]["answers"]]})
+eval_dataset: Dataset = Dataset.from_dict({"question": dataset_dict["test"]["question"], "answer": [a['text'][0] for a in dataset_dict["test"]["answers"]]})
 
 # 4. Define a loss function
 loss = CachedMultipleNegativesRankingLoss(model, mini_batch_size=32)
@@ -53,8 +55,8 @@ args = SentenceTransformerTrainingArguments(
     output_dir=f"models/{run_name}",
     # Optional training parameters:
     num_train_epochs=1,
-    per_device_train_batch_size=16,
-    per_device_eval_batch_size=16,
+    per_device_train_batch_size=BATCH_SIZE,
+    per_device_eval_batch_size=BATCH_SIZE,
     learning_rate=2e-5,
     warmup_ratio=0.1,
     fp16=False,  # Set to False if you get an error that your GPU can't run on FP16
