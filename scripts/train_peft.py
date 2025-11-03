@@ -13,6 +13,9 @@ from sentence_transformers import (
 )
 from sentence_transformers.losses import CachedMultipleNegativesRankingLoss
 from sentence_transformers.training_args import BatchSamplers
+import torch.distributed as dist
+from peft import PeftModel
+import torch
 
 DATASET_NAME = "Rivert97/ug-normativity"
 BATCH_SIZE = 16
@@ -24,65 +27,84 @@ logging.basicConfig(format="%(asctime)s - %(message)s", datefmt="%Y-%m-%d %H:%M:
 model_name = sys.argv[1] if len(sys.argv) > 1 else "all-MiniLM-L6-v2"
 model_name_only = model_name.split("/")[-1]
 
-# 1. Load a model to finetune with 2. (Optional) model card data
-model = SentenceTransformer(
-    model_name,
-)
+def main():
+    # 1. Load a model to finetune with 2. (Optional) model card data
+    model = SentenceTransformer(
+        model_name,
+    )
 
-# Create a LoRA adapter for the model
-peft_config = LoraConfig(
-    task_type=TaskType.FEATURE_EXTRACTION,
-    inference_mode=False,
-    r=64,
-    lora_alpha=128,
-    lora_dropout=0.1,
-)
-model.add_adapter(peft_config)
+    # Create a LoRA adapter for the model
+    peft_config = LoraConfig(
+        task_type=TaskType.FEATURE_EXTRACTION,
+        inference_mode=False,
+        r=64,
+        lora_alpha=128,
+        lora_dropout=0.1,
+    )
+    model.add_adapter(peft_config)
 
-# 3. Load a dataset to finetune on
-dataset = load_dataset(DATASET_NAME, split="train")
-dataset_dict = dataset.train_test_split(test_size=0.2, seed=12)
-train_dataset: Dataset = Dataset.from_dict({"question": dataset_dict["train"]["question"], "answer": [a['text'][0] for a in dataset_dict["train"]["answers"]]})
-eval_dataset: Dataset = Dataset.from_dict({"question": dataset_dict["test"]["question"], "answer": [a['text'][0] for a in dataset_dict["test"]["answers"]]})
+    # 3. Load a dataset to finetune on
+    dataset = load_dataset(DATASET_NAME, split="train")
+    dataset_dict = dataset.train_test_split(test_size=0.2, seed=12)
+    train_dataset: Dataset = Dataset.from_dict({"question": dataset_dict["train"]["question"], "answer": [a['text'][0] for a in dataset_dict["train"]["answers"]]})
+    eval_dataset: Dataset = Dataset.from_dict({"question": dataset_dict["test"]["question"], "answer": [a['text'][0] for a in dataset_dict["test"]["answers"]]})
 
-# 4. Define a loss function
-loss = CachedMultipleNegativesRankingLoss(model, mini_batch_size=32)
+    # 4. Define a loss function
+    loss = CachedMultipleNegativesRankingLoss(model, mini_batch_size=32)
 
-# 5. (Optional) Specify training arguments
-run_name = f"{model_name_only}-ug-normativity-peft"
-args = SentenceTransformerTrainingArguments(
-    # Required parameter:
-    output_dir=f"models/{run_name}",
-    # Optional training parameters:
-    num_train_epochs=1,
-    per_device_train_batch_size=BATCH_SIZE,
-    per_device_eval_batch_size=BATCH_SIZE,
-    learning_rate=2e-5,
-    warmup_ratio=0.1,
-    fp16=False,  # Set to False if you get an error that your GPU can't run on FP16
-    bf16=True,  # Set to True if you have a GPU that supports BF16
-    batch_sampler=BatchSamplers.NO_DUPLICATES,  # MultipleNegativesRankingLoss benefits from no duplicate samples in a batch
-    # Optional tracking/debugging parameters:
-    eval_strategy="steps",
-    eval_steps=100,
-    save_strategy="steps",
-    save_steps=100,
-    save_total_limit=2,
-    logging_steps=25,
-    logging_first_step=True,
-    run_name=run_name,  # Will be used in W&B if `wandb` is installed
-)
+    # 5. (Optional) Specify training arguments
+    run_name = f"{model_name_only}-ug-normativity-peft"
+    args = SentenceTransformerTrainingArguments(
+        # Required parameter:
+        output_dir=f"models/{run_name}",
+        # Optional training parameters:
+        num_train_epochs=1,
+        per_device_train_batch_size=BATCH_SIZE,
+        per_device_eval_batch_size=BATCH_SIZE,
+        learning_rate=2e-5,
+        warmup_ratio=0.1,
+        fp16=False,  # Set to False if you get an error that your GPU can't run on FP16
+        bf16=True,  # Set to True if you have a GPU that supports BF16
+        batch_sampler=BatchSamplers.NO_DUPLICATES,  # MultipleNegativesRankingLoss benefits from no duplicate samples in a batch
+        # Optional tracking/debugging parameters:
+        eval_strategy="steps",
+        eval_steps=100,
+        save_strategy="steps",
+        save_steps=100,
+        save_total_limit=2,
+        logging_steps=25,
+        logging_first_step=True,
+        run_name=run_name,  # Will be used in W&B if `wandb` is installed
+    )
 
-# 7. Create a trainer & train
-trainer = SentenceTransformerTrainer(
-    model=model,
-    args=args,
-    train_dataset=train_dataset,
-    eval_dataset=eval_dataset,
-    loss=loss,
-)
-trainer.train()
+    # 7. Create a trainer & train
+    trainer = SentenceTransformerTrainer(
+        model=model,
+        args=args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        loss=loss,
+    )
+    trainer.train()
 
-# 8. Save the trained model
-final_output_dir = f"models/{run_name}/final"
-model.save_pretrained(final_output_dir)
+    # 8. Save the trained model
+    final_output_dir = f"models/{run_name}/final"
+    # Check if the model has a PEFT (LoRA) adapter
+    inner_model = model._first_module().auto_model
+    if isinstance(inner_model, PeftModel):
+        print("Merging LoRA adapter into base model before saving...")
+        merged_model = inner_model.merge_and_unload()  # merge LoRA weights
+        merged_model = merged_model.to(torch.float32)  # ensure weights are fp32
+        model._first_module().auto_model = merged_model  # replace LoRA model
+    else:
+        print("No PEFT adapter found, saving normally.")
+
+    # Save the merged model
+    model.save(final_output_dir)
+    #model.save_pretrained(final_output_dir)
+
+    if dist.is_initialized():
+        dist.destroy_process_group()
+
+if __name__ == '__main__':
+    main()
