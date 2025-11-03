@@ -14,6 +14,7 @@ DATASET_NAME = 'Rivert97/ug-normativity'
 EMBEDDINGS_DIR = './dataset_embeddings'
 
 DEFAULT_MODEL_ID = 'all-MiniLM-L6-v2'
+DATASET_SPLIT = 'train+test'
 
 def get_embeddings(dataset, document_name: str, model: SentenceTransformer, batch_size: int = 32) -> pd.DataFrame:
     filtered = dataset.filter(lambda row: row['title'] == document_name)
@@ -51,8 +52,7 @@ def main():
     print(subprocess.run(['nvidia-smi']))
 
     # Loading the questions
-    dataset = load_dataset(DATASET_NAME)
-    dataset = dataset['train']
+    dataset = load_dataset(DATASET_NAME, split=DATASET_SPLIT)
     print(dataset)
 
     # Converting questions to embeddings

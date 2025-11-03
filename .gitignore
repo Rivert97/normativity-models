@@ -8,5 +8,7 @@ dataset_embeddings/
 dataset_embeddings_transformers/
 results_*/
 responses*/
+runs/
+models/
 
 .env

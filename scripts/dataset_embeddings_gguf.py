@@ -13,6 +13,7 @@ from llama_cpp import Llama
 # Global variables
 DATASET_NAME = 'Rivert97/ug-normativity'
 EMBEDDINGS_DIR = './dataset_embeddings/'
+DATASET_SPLIT = 'train+test'
 
 def get_model(model_dir: str, model_gguf: str):
     model = Llama(
@@ -65,8 +66,7 @@ def main():
     model = get_model(model_dir, f"{model_gguf}.gguf")
 
     # Loading the questions
-    dataset = load_dataset(DATASET_NAME)
-    dataset = dataset['train']
+    dataset = load_dataset(DATASET_NAME, split=DATASET_SPLIT)
     print(dataset)
 
     # Converting questions to embeddings

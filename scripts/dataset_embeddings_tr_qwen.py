@@ -16,6 +16,7 @@ import numpy as np
 # Global variables
 DATASET_NAME = 'Rivert97/ug-normativity'
 EMBEDDINGS_DIR = './dataset_embeddings'
+DATASET_SPLIT = 'train+test'
 
 DEFAULT_MODEL_ID = 'Qwen/Qwen3-Embedding-0.6B'
 
@@ -94,8 +95,7 @@ def main():
     model, tokenizer = get_model(model_id)
 
     # Loading the questions
-    dataset = load_dataset(DATASET_NAME)
-    dataset = dataset['train']
+    dataset = load_dataset(DATASET_NAME, split=DATASET_SPLIT)
     print(dataset)
 
     # Converting questions to embeddings
