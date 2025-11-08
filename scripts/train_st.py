@@ -88,6 +88,19 @@ def main():
     print("Final evaluation")
     dev_evaluator(model)
 
+    # 7. Evaluate with test dataset
+    print("Test evaluation")
+    test_dataset = load_dataset(DATASET_NAME, split='test')
+    print(test_dataset)
+    test_evaluator = InformationRetrievalEvaluator(
+        queries={q["id"]: q["question"] for q in test_dataset},
+        corpus={"Doc_"+q["id"]: q["context_text"] for q in test_dataset},
+        relevant_docs={q["id"]:["Doc_"+q["id"]] for q in test_dataset},
+        batch_size=BATCH_SIZE,
+        name="sts-test",
+    )
+    test_evaluator(model)
+
     if not is_initialized() or get_rank() == 0:
         trainer.model.save(f"{SAVE_MODEL}/{run_name}")
 
