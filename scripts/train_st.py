@@ -32,10 +32,8 @@ def main():
     # 2. Load training dataset
     dataset = load_dataset(DATASET_NAME, split='train')
     dataset_dict = dataset.train_test_split(test_size=0.1, seed=12)
-    train_dataset: Dataset = Dataset.from_dict({"anchor": dataset_dict["train"]["question"], "positive": [a['text'][0] for a in dataset_dict["train"]["answers"]]})
-    eval_dataset: Dataset = Dataset.from_dict({"id": dataset_dict["test"]["id"], "context": dataset_dict["test"]["context_text"], "question": dataset_dict["test"]["question"], "answer": [a['text'][0] for a in dataset_dict["test"]["answers"]]})
+    train_dataset: Dataset = Dataset.from_dict({"anchor": dataset_dict["train"]["question"], "positive": dataset_dict["train"]["context_text"]})
     print(train_dataset)
-    print(eval_dataset)
 
     # 3. Define a loss function
     train_loss = CachedMultipleNegativesRankingLoss(model, mini_batch_size=32)
@@ -67,9 +65,9 @@ def main():
     # 5. Create an evaluator & evaluate the base model
     print("Initial evaluation")
     dev_evaluator = InformationRetrievalEvaluator(
-        queries={q["id"]: q["question"] for q in eval_dataset},
-        corpus={"Doc_"+q["id"]: q["context"] for q in eval_dataset},
-        relevant_docs={q["id"]:["Doc_"+q["id"]] for q in eval_dataset},
+        queries={q["id"]: q["question"] for q in dataset_dict["test"]},
+        corpus={"Doc_"+q["id"]: q["context_text"] for q in dataset_dict["test"]},
+        relevant_docs={q["id"]:["Doc_"+q["id"]] for q in dataset_dict["test"]},
         batch_size=BATCH_SIZE,
         name="sts-dev",
     )
@@ -80,7 +78,7 @@ def main():
         model=model,
         args=args,
         train_dataset=train_dataset,
-        eval_dataset=Dataset.from_dict({"anchor": dataset_dict["test"]["question"], "positive": [a['text'][0] for a in dataset_dict["test"]["answers"]]}),
+        eval_dataset=Dataset.from_dict({"anchor": dataset_dict["test"]["question"], "positive": dataset_dict["test"]["context_text"]}),
         loss=train_loss,
     )
     trainer.train()
